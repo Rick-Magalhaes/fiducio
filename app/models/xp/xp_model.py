@@ -1,6 +1,6 @@
-from app.core.base_model import ProcuracaoBase
+from app.models.base_model import ProcuracaoBase
 from app.utils.cpf_utils import extrair_cpf
-from app.utils.votos_utils import extrair_votos
+from app.models.xp.votos_utils import extrair_votos
 from app.utils.text_utils import texto_completo
 
 class ProcuracaoXP(ProcuracaoBase):

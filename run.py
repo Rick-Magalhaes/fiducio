@@ -1,6 +1,6 @@
 from pathlib import Path
 from app.core.processor import ProcessadorProcuracoes
-from app.models.xp_model import ProcuracaoXP
+from app.models.xp.xp_model import ProcuracaoXP
 
 from tkinter import Tk, filedialog
 
