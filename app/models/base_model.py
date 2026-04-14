@@ -1,9 +1,8 @@
 # app/models/base.py  ← mover para cá
 from abc import ABC, abstractmethod
-from typing import Protocol
 
 class ProcuracaoBase(ABC):
-    def __init__(self, pdf):  # ← enforce no construtor
+    def __init__(self, pdf):
         self.pdf = pdf
 
     @abstractmethod
