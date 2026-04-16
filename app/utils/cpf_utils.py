@@ -38,7 +38,7 @@ def extrair_cpf(texto: str) -> str | None:
         return r2 == int(digits[10])
 
     def buscar_no_trecho(trecho: str) -> str | None:
-        for m in re.finditer(r"\d[\d\.\-\s]{8,13}\d", trecho[:150]):
+        for m in re.finditer(r"\d[\d\.\-\/\s]{8,13}\d", trecho[:150]):
             digits = re.sub(r"\D", "", m.group())
             if len(digits) == 11 and cpf_valido(digits):
                 return formatar_cpf(digits)
@@ -54,13 +54,13 @@ def extrair_cpf(texto: str) -> str | None:
 
     for t in [texto_limpo, texto]:
 
-        # 1) tenta formato com pontos/traços
-        for m in re.finditer(r"\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\.\s]?\d{2}", t):
+    # 1) formato com pontos/traços/barras
+        for m in re.finditer(r"\d{3}[\/\.\s]?\d{3}[\/\.\s]?\d{3}[-\/\.\s]?\d{2}", t):
             digits = re.sub(r"\D", "", m.group())
             if len(digits) == 11 and cpf_valido(digits):
                 return formatar_cpf(digits)
 
-        # 2) tenta CPF cru (11 dígitos seguidos)
+        # 2) 11 dígitos seguidos (não muda)
         for m in re.finditer(r"\b\d{11}\b", t):
             digits = m.group()
             if cpf_valido(digits):
