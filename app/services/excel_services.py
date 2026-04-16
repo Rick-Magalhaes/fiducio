@@ -57,7 +57,7 @@ class ExcelResult:
 # =============================================================================
 
 def _normalizar_cpf(valor: str) -> str:
-    return re.sub(r"\D", "", str(valor))
+    return re.sub(r"\D", "", str(valor)).zfill(11)
 
 def _parsear_nome(caminho: Path) -> DadosArquivo | None:
     stem = caminho.stem.strip().replace('"', "")

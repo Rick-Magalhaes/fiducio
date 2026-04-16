@@ -58,9 +58,14 @@ class ProcessadorProcuracoes:
         except Exception as e:
             return ProcessingResult(caminho, erro=str(e))
 
-    def processar_pasta(self, pasta: Path) -> BatchResult:
+    def processar_pasta(self, pasta: Path, callback=None) -> BatchResult:
+        arquivos = sorted(pasta.glob("*.pdf"))
         batch = BatchResult()
-        for arquivo in sorted(pasta.glob("*.pdf")):
+
+        for arquivo in arquivos:
             resultado = self.processar_pdf(arquivo)
             batch.resultados.append(resultado)
+            if callback:
+                callback(resultado)
+
         return batch

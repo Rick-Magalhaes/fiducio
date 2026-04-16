@@ -24,7 +24,7 @@ class ProcuracaoXP(ProcuracaoBase):
 
     def extrair_votos(self):
         if self._votos is None:
-            self._votos = extrair_votos(self.pdf)
+            self._votos = extrair_votos(self.pdf, texto=self.texto)  # reutiliza o cache
         return self._votos
 
     def gerar_nome_arquivo(self):

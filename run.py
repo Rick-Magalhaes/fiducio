@@ -24,16 +24,19 @@ if __name__ == "__main__":
         print("Nenhum PDF encontrado na pasta selecionada.")
         exit()
 
-    print(f"\nProcessando {len(arquivos)} arquivo(s)...\n")
+    total = len(arquivos)
+    print(f"\nProcessando {total} arquivo(s)...\n")
+
+    contador = [0]
+
+    def on_resultado(resultado):
+        contador[0] += 1
+        status = "✓" if resultado.sucesso else "✗"
+        saida = resultado.novo_nome or resultado.erro
+        print(f"[{contador[0]}/{total}] {status} {resultado.caminho_original.name} → {saida}")
 
     processador = ProcessadorProcuracoes(ProcuracaoXP)
-    batch = processador.processar_pasta(pasta)
-
-    for r in batch.resultados:
-        if r.sucesso:
-            print(f"✓ {r.caminho_original.name} → {r.novo_nome}")
-        else:
-            print(f"✗ {r.caminho_original.name} → {r.erro}")
+    batch = processador.processar_pasta(pasta, callback=on_resultado)
 
     print(f"\nFinalizado! {len(batch.sucessos)} processado(s), {len(batch.falhas)} erro(s).")
 
@@ -41,6 +44,5 @@ if __name__ == "__main__":
         print("\nArquivos que não foram renomeados:")
         for r in batch.falhas:
             print(f"   • {r.caminho_original.name}")
-
         log_path = batch.salvar_log_erros(pasta)
         print(f"\nLog de erros salvo em: {log_path}")

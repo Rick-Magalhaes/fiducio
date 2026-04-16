@@ -255,18 +255,17 @@ def detectar_deliberacoes_presentes(texto: str):
 # FINAL
 # =============================================================================
 
-def extrair_votos(pdf):
-    texto = ""
-    for page in pdf.pages:
-        texto += (page.extract_text() or "") + "\n"
+def extrair_votos(pdf, texto: str | None = None):
+    if texto is None:
+        texto = ""
+        for page in pdf.pages:
+            texto += (page.extract_text() or "") + "\n"
 
     presentes = detectar_deliberacoes_presentes(texto)
-
     resultados_linear, _ = extrair_votos_linear_com_lookahead(texto)
     resultados_espacial, _ = extrair_votos_espacial(pdf)
 
     resultados_final = {}
-
     for num in range(1, NUM_DELIBERACOES + 1):
         if num not in presentes:
             resultados_final[num] = "NV"
