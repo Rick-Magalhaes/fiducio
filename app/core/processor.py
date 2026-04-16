@@ -1,6 +1,9 @@
+import csv
 import pdfplumber
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from datetime import datetime
+
 
 @dataclass
 class ProcessingResult:
@@ -11,6 +14,31 @@ class ProcessingResult:
     @property
     def sucesso(self) -> bool:
         return self.erro is None
+
+
+@dataclass 
+class BatchResult:
+    resultados: list[ProcessingResult] = field(default_factory=list)
+
+    @property
+    def sucessos(self) -> list[ProcessingResult]:
+        return [r for r in self.resultados if r.sucesso]
+
+    @property
+    def falhas(self) -> list[ProcessingResult]:
+        return [r for r in self.resultados if not r.sucesso]
+
+    def salvar_log_erros(self, pasta: Path) -> Path | None:
+        if not self.falhas:
+            return None
+        caminho = pasta / f"erros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        with open(caminho, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["arquivo", "erro"])
+            for r in self.falhas:
+                writer.writerow([r.caminho_original.name, r.erro])
+        return caminho
+
 
 class ProcessadorProcuracoes:
 
@@ -29,3 +57,10 @@ class ProcessadorProcuracoes:
 
         except Exception as e:
             return ProcessingResult(caminho, erro=str(e))
+
+    def processar_pasta(self, pasta: Path) -> BatchResult:
+        batch = BatchResult()
+        for arquivo in sorted(pasta.glob("*.pdf")):
+            resultado = self.processar_pdf(arquivo)
+            batch.resultados.append(resultado)
+        return batch

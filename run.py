@@ -1,7 +1,6 @@
 from pathlib import Path
 from app.core.processor import ProcessadorProcuracoes
 from app.models.xp.xp_model import ProcuracaoXP
-
 from tkinter import Tk, filedialog
 
 
@@ -21,7 +20,6 @@ if __name__ == "__main__":
         exit()
 
     arquivos = sorted(pasta.glob("*.pdf"))
-
     if not arquivos:
         print("Nenhum PDF encontrado na pasta selecionada.")
         exit()
@@ -29,17 +27,20 @@ if __name__ == "__main__":
     print(f"\nProcessando {len(arquivos)} arquivo(s)...\n")
 
     processador = ProcessadorProcuracoes(ProcuracaoXP)
+    batch = processador.processar_pasta(pasta)
 
-    sucessos = 0
-    falhas = 0
-
-    for arquivo in arquivos:
-        resultado = processador.processar_pdf(arquivo)
-        if resultado.sucesso:
-            print(f"✓ {resultado.caminho_original.name} → {resultado.novo_nome}")
-            sucessos += 1
+    for r in batch.resultados:
+        if r.sucesso:
+            print(f"✓ {r.caminho_original.name} → {r.novo_nome}")
         else:
-            print(f"✗ {resultado.caminho_original.name} → {resultado.erro}")
-            falhas += 1
+            print(f"✗ {r.caminho_original.name} → {r.erro}")
 
-    print(f"\nFinalizado! {sucessos} processado(s), {falhas} erro(s).")
+    print(f"\nFinalizado! {len(batch.sucessos)} processado(s), {len(batch.falhas)} erro(s).")
+
+    if batch.falhas:
+        print("\nArquivos que não foram renomeados:")
+        for r in batch.falhas:
+            print(f"   • {r.caminho_original.name}")
+
+        log_path = batch.salvar_log_erros(pasta)
+        print(f"\nLog de erros salvo em: {log_path}")
