@@ -52,8 +52,17 @@ class ProcessadorProcuracoes:
                 novo_nome = proc.gerar_nome_arquivo()
 
             novo_caminho = caminho.with_name(novo_nome)
+
+            # evita WinError 183 — se destino já existe, adiciona sufixo
+            if novo_caminho.exists() and novo_caminho != caminho:
+                stem = novo_caminho.stem
+                sufixo = 1
+                while novo_caminho.exists():
+                    novo_caminho = caminho.with_name(f"{stem}_{sufixo}.pdf")
+                    sufixo += 1
+
             caminho.rename(novo_caminho)
-            return ProcessingResult(caminho, novo_nome=novo_nome)
+            return ProcessingResult(caminho, novo_nome=novo_caminho.name)
 
         except Exception as e:
             return ProcessingResult(caminho, erro=str(e))
