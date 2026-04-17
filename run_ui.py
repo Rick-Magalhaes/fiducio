@@ -1,5 +1,5 @@
-from app.ui.app_flet import main
-import flet as ft
+from app.ui.app import FiducioApp
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    app = FiducioApp()
+    app.mainloop()
