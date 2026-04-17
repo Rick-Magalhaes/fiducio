@@ -1,10 +1,11 @@
 import threading
+import math
 from pathlib import Path
 
 import customtkinter as ctk
 
 from app.core.processor import ProcessadorProcuracoes
-from app.models.xp.xp_model import ProcuracaoXP
+from app.models.registry import MODELOS
 from app.services.excel_services import carregar_arquivos, preencher_excel
 
 ctk.set_appearance_mode("dark")
@@ -26,33 +27,119 @@ class FiducioApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Fiducio")
-        self.geometry("800x700")
-        self.resizable(False, False)
+        self.geometry("1000x800")
+        self.resizable(True, True)
         self.configure(fg_color=BG)
 
         self.pasta_pdf_path: Path | None = None
         self.pasta_excel_path: Path | None = None
         self.excel_path: Path | None = None
+        self.modelo_selecionado: str = list(MODELOS.keys())[0]
 
         self._build()
 
+    # ── logo ──────────────────────────────────────────────────────────────────
+
+    def _draw_logo(self, parent):
+        size = 44
+        canvas = ctk.CTkCanvas(
+            parent,
+            width=size,
+            height=size,
+            bg=BG,
+            highlightthickness=0,
+        )
+        canvas.pack(side="left", padx=(0, 12))
+
+        cx, cy, r_out, r_in = size / 2, size / 2, 20, 11
+        sides = 5
+        color = "#e2e8f0"
+        gap = 3
+
+        def penta_points(cx, cy, r, offset=0):
+            pts = []
+            for i in range(sides):
+                angle = math.radians(offset + i * 360 / sides)
+                pts.append((cx + r * math.sin(angle), cy - r * math.cos(angle)))
+            return pts
+
+        def lerp(a, b, t):
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+        outer_pts = penta_points(cx, cy, r_out)
+        inner_pts = penta_points(cx, cy, r_in)
+
+        for i in range(sides):
+            p1_out = outer_pts[i]
+            p2_out = outer_pts[(i + 1) % sides]
+            p1_in  = inner_pts[i]
+            p2_in  = inner_pts[(i + 1) % sides]
+
+            gap_t = gap / (math.dist(p1_out, p2_out))
+
+            seg_out_start = lerp(p1_out, p2_out, gap_t)
+            seg_out_end   = lerp(p2_out, p1_out, gap_t)
+            seg_in_start  = lerp(p2_in, p1_in, gap_t)
+            seg_in_end    = lerp(p1_in, p2_in, gap_t)
+
+            coords = [
+                seg_out_start[0], seg_out_start[1],
+                seg_out_end[0],   seg_out_end[1],
+                seg_in_start[0],  seg_in_start[1],
+                seg_in_end[0],    seg_in_end[1],
+            ]
+            canvas.create_polygon(coords, fill=color, outline="")
+
+        return canvas
+
+    # ── build ─────────────────────────────────────────────────────────────────
+
     def _build(self):
-        outer = ctk.CTkFrame(self, fg_color=BG)
+        outer = ctk.CTkScrollableFrame(self, fg_color=BG, scrollbar_button_color=BORDER)
         outer.pack(fill="both", expand=True, padx=28, pady=28)
 
         # cabeçalho
+        header = ctk.CTkFrame(outer, fg_color="transparent")
+        header.pack(anchor="w", pady=(0, 20))
+
+        self._draw_logo(header)
+
+        text_col = ctk.CTkFrame(header, fg_color="transparent")
+        text_col.pack(side="left")
+
         ctk.CTkLabel(
-            outer, text="Fiducio",
+            text_col, text="Fiducio",
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color=TEXT,
         ).pack(anchor="w")
         ctk.CTkLabel(
-            outer, text="Auxiliar de Assembleias",
+            text_col, text="Auxiliar de Assembleias",
             font=ctk.CTkFont(size=13),
             text_color=MUTED,
-        ).pack(anchor="w", pady=(0, 20))
+        ).pack(anchor="w")
 
-        # ── seção renomear ────────────────────────────────────────────────────
+        # ── modelo ────────────────────────────────────────────────────────────
+        self._section_label(outer, "MODELO")
+        self._label(outer, "MODELO DE PROCURAÇÃO")
+        self.dropdown_modelo = ctk.CTkOptionMenu(
+            outer,
+            values=list(MODELOS.keys()),
+            fg_color=SURFACE,
+            button_color=SURFACE,
+            button_hover_color="#252837",
+            dropdown_fg_color=SURFACE,
+            dropdown_hover_color="#252837",
+            text_color=TEXT,
+            dropdown_text_color=TEXT,
+            font=ctk.CTkFont(size=13),
+            height=36,
+            command=self._on_modelo_change,
+        )
+        self.dropdown_modelo.pack(anchor="w", pady=(4, 0))
+
+        self._divider(outer)
+
+        # ── renomear ──────────────────────────────────────────────────────────
         self._section_label(outer, "RENOMEAR PDFs")
 
         self._label(outer, "PASTA COM OS PDFs")
@@ -80,7 +167,7 @@ class FiducioApp(ctk.CTk):
 
         self._divider(outer)
 
-        # ── seção excel ───────────────────────────────────────────────────────
+        # ── excel ─────────────────────────────────────────────────────────────
         self._section_label(outer, "PREENCHER EXCEL")
 
         self._label(outer, "PASTA COM OS PDFs RENOMEADOS")
@@ -103,7 +190,7 @@ class FiducioApp(ctk.CTk):
             side="left", padx=(8, 0)
         )
 
-        self.btn_excel = ctk.CTkButton(
+        ctk.CTkButton(
             outer,
             text="Preencher Excel",
             fg_color=SURFACE,
@@ -116,17 +203,40 @@ class FiducioApp(ctk.CTk):
             command=lambda: threading.Thread(
                 target=self._processar_excel, daemon=True
             ).start(),
-        )
-        self.btn_excel.pack(anchor="e", pady=(12, 0))
+        ).pack(anchor="e", pady=(12, 0))
 
         self._divider(outer)
 
         # ── log ───────────────────────────────────────────────────────────────
-        self._section_label(outer, "LOG")
+        log_header = ctk.CTkFrame(outer, fg_color="transparent")
+        log_header.pack(fill="x", pady=(0, 8))
+
+        ctk.CTkFrame(log_header, fg_color=BORDER, height=1).pack(
+            side="left", fill="x", expand=True, pady=(8, 0)
+        )
+        ctk.CTkLabel(
+            log_header, text="  LOG  ",
+            font=ctk.CTkFont(size=10),
+            text_color=MUTED,
+        ).pack(side="left")
+        ctk.CTkButton(
+            log_header,
+            text="Limpar",
+            fg_color="transparent",
+            hover_color=SURFACE,
+            text_color=MUTED,
+            font=ctk.CTkFont(size=10),
+            height=20,
+            width=60,
+            command=self._log_clear,
+        ).pack(side="left")
+        ctk.CTkFrame(log_header, fg_color=BORDER, height=1).pack(
+            side="left", fill="x", expand=True, pady=(8, 0)
+        )
 
         self.log_box = ctk.CTkTextbox(
             outer,
-            height=200,
+            height=220,
             fg_color=BG,
             border_color=BORDER,
             border_width=1,
@@ -135,32 +245,18 @@ class FiducioApp(ctk.CTk):
             wrap="none",
             state="disabled",
         )
-        self.log_box.pack(fill="x", pady=(4, 0))
-
-        footer = ctk.CTkFrame(outer, fg_color="transparent")
-        footer.pack(fill="x", pady=(6, 0))
-        footer.columnconfigure(0, weight=1)
-        footer.columnconfigure(1, weight=0)
+        self.log_box.pack(fill="x", pady=(0, 0))
 
         self.resumo_label = ctk.CTkLabel(
-            footer, text="", font=ctk.CTkFont(size=40), text_color=MUTED,
+            outer,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
             anchor="w",
         )
-        self.resumo_label.grid(row=0, column=0, sticky="w")
+        self.resumo_label.pack(anchor="w", pady=(6, 0))
 
-        ctk.CTkButton(
-            footer,
-            text="Limpar log",
-            fg_color="transparent",
-            hover_color=SURFACE,
-            text_color=MUTED,
-            font=ctk.CTkFont(size=12),
-            height=28,
-            width=80,
-            command=self._log_clear,
-        ).grid(row=0, column=1, sticky="e")
-
-    # ── widgets helpers ───────────────────────────────────────────────────────
+    # ── widget helpers ────────────────────────────────────────────────────────
 
     def _section_label(self, parent, text):
         frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -248,9 +344,12 @@ class FiducioApp(ctk.CTk):
         field.insert(0, value)
         field.configure(state="readonly")
 
+    def _on_modelo_change(self, valor: str):
+        self.modelo_selecionado = valor
+
     # ── log ───────────────────────────────────────────────────────────────────
 
-    def _log_add(self, msg: str, color: str = TEXT):
+    def _log_add(self, msg: str):
         self.log_box.configure(state="normal")
         self.log_box.insert("end", msg + "\n")
         self.log_box.see("end")
@@ -279,6 +378,7 @@ class FiducioApp(ctk.CTk):
             return
 
         total = len(arquivos)
+        self._log_add(f"Modelo: {self.modelo_selecionado}")
         self._log_add(f"Processando {total} arquivo(s)...")
 
         contador = [0]
@@ -298,7 +398,8 @@ class FiducioApp(ctk.CTk):
                     f"[{contador[0]}/{total}] ✗  {r.caminho_original.name}  →  {r.erro}"
                 )
 
-        processador = ProcessadorProcuracoes(ProcuracaoXP)
+        modelo = MODELOS[self.modelo_selecionado]
+        processador = ProcessadorProcuracoes(modelo)
         batch = processador.processar_pasta(pasta, callback=on_resultado)
 
         self.resumo_label.configure(
