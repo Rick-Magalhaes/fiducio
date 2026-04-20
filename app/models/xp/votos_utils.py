@@ -9,13 +9,13 @@ import unicodedata
 ESCRITORIOS = [
     ("machado meyer",      "MM"),
     ("sacramone",          "SOB"),
-    ("virtus",             "VIR"),
     ("costa tavares",      "CTP"),
     ("pinheiro guimaraes", "PGA"),
     ("pinheiro guimar",    "PGA"),
     ("felsberg",           "Fel"),
-    ("br partners",        "BR"),
     ("journey capital",    "JNEY"),
+    ("virtus br",          "VIR"),
+    ("br partners",        "BR"),
     ("g5 partners",        "G5"),
     ("sob",                "SOB"),
     ("g5",                 "G5"),
@@ -49,7 +49,7 @@ def classificar_opcao_linha(texto_linha: str, num_delib: int) -> str | None:
             return sigla
         if "nao aprovar" in t or "reprova" in t or "rejeita" in t:
             return "R"
-        if "abstem" in t or "abstencao" in t or "abster" in t or "se abstem" in t:
+        if "abstem" in t or "abstencao" in t or "abster" in t or "se abstem" in t or "se abster" in t:
             return "AB"
         if "aprova" in t or "aprovar" in t:
             return "A"
@@ -57,7 +57,7 @@ def classificar_opcao_linha(texto_linha: str, num_delib: int) -> str | None:
 
     if "nao aprovar" in t or "reprova" in t or "rejeita" in t:
         return "R"
-    if "abstem" in t or "abstencao" in t or "abster" in t or "se abstem" in t:
+    if "abstem" in t or "abstencao" in t or "abster" in t or "se abstem" in t or "se abster" in t:
         return "AB"
     if "aprova" in t or "aprovar" in t:
         return "A"
@@ -245,11 +245,64 @@ def detectar_deliberacoes_presentes(texto: str):
         if (
             re.search(rf"\(\s*{num}\s*\)", texto)
             or re.search(rf"\({{2,}}\s*{num}\s*\){{2,}}", texto)
-            or re.search(rf"^\s*{num}\.\s+(?:Quanto|Em\s+rela)", texto, re.MULTILINE)
+            or re.search(rf"^\s*{num}\.\s+(?:Quanto|Em\s+rela)", texto, re.MULTILINE | re.IGNORECASE)
         ):
             presentes.add(num)
 
     return presentes
+
+# =============================================================================
+# EXTRAÇÃO DE WIDGETS (form fields)
+# =============================================================================
+
+def extrair_votos_widgets(pdf) -> dict[int, str]:
+    """
+    Lê form fields (widgets) do PDF — usados quando o x está em
+    camada de anotação e não é extraído pelo fluxo de texto normal.
+    """
+    resultados: dict[int, str] = {}
+
+    try:
+        for page in pdf.pages:
+            widgets = page.widgets
+            if not widgets:
+                continue
+            for w in widgets:
+                valor = w.get("value") or w.get("V") or ""
+                if not valor or str(valor).strip() in ("", "Off", "N"):
+                    continue
+
+                # tenta encontrar o texto ao redor do widget para classificar
+                x0 = w.get("x0", 0)
+                top = w.get("top", 0)
+
+                # busca texto próximo na mesma página
+                palavras = page.extract_words() or []
+                vizinhos = [
+                    p["text"] for p in palavras
+                    if abs(p["top"] - top) <= 15 and p["x0"] > x0
+                ]
+                texto_vizinho = " ".join(vizinhos[:8])
+
+                # tenta identificar deliberação pela posição vertical
+                # procura cabeçalhos na página
+                texto_pagina = page.extract_text() or ""
+                linhas = texto_pagina.splitlines()
+
+                delib_atual = None
+                for linha in linhas:
+                    m_b = CABECALHO_B_RE.match(linha.strip())
+                    if m_b:
+                        delib_atual = int(m_b.group(1))
+
+                if delib_atual and texto_vizinho:
+                    sigla = classificar_opcao_linha(texto_vizinho, delib_atual)
+                    if sigla and delib_atual not in resultados:
+                        resultados[delib_atual] = sigla
+    except Exception as e:
+        logging.warning("Erro ao ler widgets: %s", e)
+
+    return resultados
 
 # =============================================================================
 # FINAL
@@ -262,8 +315,9 @@ def extrair_votos(pdf, texto: str | None = None):
             texto += (page.extract_text() or "") + "\n"
 
     presentes = detectar_deliberacoes_presentes(texto)
-    resultados_linear, _ = extrair_votos_linear_com_lookahead(texto)
+    resultados_linear, _  = extrair_votos_linear_com_lookahead(texto)
     resultados_espacial, _ = extrair_votos_espacial(pdf)
+    resultados_widgets     = extrair_votos_widgets(pdf)
 
     resultados_final = {}
     for num in range(1, NUM_DELIBERACOES + 1):
@@ -273,6 +327,8 @@ def extrair_votos(pdf, texto: str | None = None):
             resultados_final[num] = resultados_linear[num]
         elif num in resultados_espacial:
             resultados_final[num] = resultados_espacial[num]
+        elif num in resultados_widgets:
+            resultados_final[num] = resultados_widgets[num]
         else:
             resultados_final[num] = "NV"
 
