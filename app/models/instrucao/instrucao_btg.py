@@ -9,93 +9,34 @@ def norm(texto: str) -> str:
     return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode().lower().strip()
 
 
-# =============================================================================
-# REGEX
-# =============================================================================
+OPCAO_MARCADA_RE = re.compile(r"^\s*\(\s*[xX]\s*\)\s*(.*)")
+OPCAO_VAZIA_RE   = re.compile(r"^\s*\(\s*\)\s*(.*)")
 
-# cabeçalhos: (i), (ii), (iii)... ou 1., 2., 3....
+# cabeçalho romano — exige letra maiúscula após, evita casar "(x) da Escritura"
 CABECALHO_ROMANO_RE = re.compile(
-    r"^\s*\(\s*(i{1,3}|iv|vi{0,3}|ix|x)\s*\)\s+\S",
+    r"^\s*\(\s*(i{1,3}|ii|iii|iv|vi{0,3}|vii|viii|ix)\s*\)\s+[A-ZÁÉÍÓÚ]",
     re.IGNORECASE,
 )
 
 CABECALHO_NUMERICO_RE = re.compile(
-    r"^\s*(\d+)\.\s+\S",
+    r"^\s*(\d+)\.\s+[A-ZÁÉÍÓÚ]",
     re.IGNORECASE,
 )
 
-# opção marcada: (X) ou (x)
-OPCAO_MARCADA_RE = re.compile(
-    r"^\s*\(\s*[xX]\s*\)\s*(.*)",
+CPF_BLOCO_RE = re.compile(
+    r"inscrito\(a\)\s+no\s+CPF[/\\]?CNPJ\s+sob\s+o\s+n[°oº]?\s*(\d{11})",
+    re.IGNORECASE,
 )
 
-# opção vazia: ()
-OPCAO_VAZIA_RE = re.compile(
-    r"^\s*\(\s*\)\s*(.*)",
-)
-
-# mapa de algarismos romanos para inteiros
 ROMANO_MAP = {
-    "i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5,
-    "vi": 6, "vii": 7, "viii": 8, "ix": 9, "x": 10,
+    "i": 1, "ii": 2, "iii": 3, "iv": 4,
+    "vi": 6, "vii": 7, "viii": 8, "ix": 9,
 }
 
 
 def _romano_para_int(s: str) -> int:
     return ROMANO_MAP.get(s.lower().strip(), 0)
 
-
-# =============================================================================
-# DETECÇÃO DE CONFLITO
-# =============================================================================
-
-def _verificar_conflito(texto: str) -> bool | None:
-    """
-    Retorna:
-      True  → DECLARA (sem conflito, pode votar)
-      False → NÃO DECLARA ou nenhum marcado (conflito, não pode votar)
-    """
-    linhas = [l.strip() for l in texto.splitlines()]
-    declara_presente = False
-    nao_declara_presente = False
-
-    for i, linha in enumerate(linhas):
-        ln = norm(linha)
-
-        # detecta bloco de declaração
-        if "declara" in ln and "nao" not in ln and "não" not in ln:
-            # verifica se tem (X) nessa linha ou na anterior/próxima
-            if OPCAO_MARCADA_RE.match(linha):
-                return True  # (X) DECLARA
-
-        if ("nao declara" in ln or "não declara" in ln):
-            if OPCAO_MARCADA_RE.match(linha):
-                return False  # (X) NÃO DECLARA
-
-        # padrão: linha com (X) seguida de DECLARA ou NÃO DECLARA
-        m = OPCAO_MARCADA_RE.match(linha)
-        if m:
-            conteudo = norm(m.group(1))
-            if conteudo == "declara":
-                return True
-            if "nao declara" in conteudo or "não declara" in conteudo:
-                return False
-
-        m = OPCAO_VAZIA_RE.match(linha)
-        if m:
-            conteudo = norm(m.group(1))
-            if conteudo == "declara":
-                declara_presente = True
-            if "nao declara" in conteudo or "não declara" in conteudo:
-                nao_declara_presente = True
-
-    # nenhum marcado
-    return None
-
-
-# =============================================================================
-# CLASSIFICAÇÃO DE VOTO
-# =============================================================================
 
 def _classificar_voto(texto: str) -> str | None:
     t = norm(texto)
@@ -108,16 +49,28 @@ def _classificar_voto(texto: str) -> str | None:
     return None
 
 
-# =============================================================================
-# EXTRAÇÃO DE VOTOS
-# =============================================================================
+def _verificar_conflito(linhas: list[str]) -> bool:
+    """
+    True  → tem conflito (não pode votar)
+    False → sem conflito (pode votar)
+    """
+    for linha in linhas:
+        m = OPCAO_MARCADA_RE.match(linha)
+        if not m:
+            continue
+        conteudo = norm(m.group(1))
+        if conteudo == "declara":
+            return False  # (X) DECLARA = sem conflito
+        if "nao declara" in conteudo or "não declara" in conteudo:
+            return True   # (X) NÃO DECLARA = conflito
+    return True  # nenhum marcado = conflito
 
-def _extrair_votos_instrucao(texto: str) -> list[str]:
-    linhas = [l.strip() for l in texto.splitlines()]
+
+def _extrair_votos_instrucao(linhas: list[str]) -> list[str]:
     resultados: dict[int, str] = {}
     delib_atual: int | None = None
-    aguardando_conteudo = False
     max_delib = 0
+    aguardando_conteudo = False
 
     for linha in linhas:
         if not linha:
@@ -142,7 +95,6 @@ def _extrair_votos_instrucao(texto: str) -> list[str]:
             aguardando_conteudo = False
             continue
 
-        # linha aguardando conteúdo (X vazio na linha anterior)
         if aguardando_conteudo and delib_atual is not None:
             aguardando_conteudo = False
             if delib_atual not in resultados:
@@ -151,13 +103,12 @@ def _extrair_votos_instrucao(texto: str) -> list[str]:
                     resultados[delib_atual] = sigla
             continue
 
-        # opção marcada
         m_opc = OPCAO_MARCADA_RE.match(linha)
         if m_opc and delib_atual is not None and delib_atual not in resultados:
             conteudo = m_opc.group(1).strip()
-
-            # ignora linhas de declaração de conflito
             cn = norm(conteudo)
+
+            # ignora declaração de conflito
             if "declara" in cn:
                 continue
 
@@ -170,22 +121,39 @@ def _extrair_votos_instrucao(texto: str) -> list[str]:
             else:
                 aguardando_conteudo = True
 
-    # monta lista dinâmica — só até max_delib
     return [resultados.get(i, "NV") for i in range(1, max_delib + 1)]
 
 
-# =============================================================================
-# MODEL
-# =============================================================================
+def _dividir_blocos(texto: str) -> list[tuple[str, list[str]]]:
+    """
+    Divide o texto em blocos por investidor usando o CPF como separador.
+    """
+    blocos = []
+    cpf_atual = None
+    linhas_bloco: list[str] = []
+
+    for linha in texto.splitlines():
+        m_cpf = CPF_BLOCO_RE.search(linha)
+        if m_cpf:
+            if cpf_atual and linhas_bloco:
+                blocos.append((cpf_atual, linhas_bloco))
+            cpf_atual = m_cpf.group(1)
+            linhas_bloco = [linha]
+        elif cpf_atual is not None:
+            linhas_bloco.append(linha.strip())
+
+    if cpf_atual and linhas_bloco:
+        blocos.append((cpf_atual, linhas_bloco))
+
+    return blocos
+
 
 class InstrucaoVoto(ProcuracaoBase):
 
     def __init__(self, pdf):
         super().__init__(pdf)
         self._texto = None
-        self._cpf = None
-        self._votos = None
-        self._conflito = None
+        self._blocos = None
 
     @property
     def texto(self):
@@ -193,34 +161,41 @@ class InstrucaoVoto(ProcuracaoBase):
             self._texto = texto_completo(self.pdf)
         return self._texto
 
+    def _get_blocos(self) -> list[tuple[str, list[str]]]:
+        if self._blocos is None:
+            self._blocos = _dividir_blocos(self.texto)
+        return self._blocos
+
     def extrair_cpf(self):
-        if self._cpf is None:
-            self._cpf = extrair_cpf(self.texto)
-        return self._cpf
+        blocos = self._get_blocos()
+        if blocos:
+            return blocos[0][0]
+        return extrair_cpf(self.texto)
 
     def extrair_votos(self):
-        if self._votos is None:
-            self._votos = _extrair_votos_instrucao(self.texto)
-        return self._votos
-
-    def _tem_conflito(self) -> bool:
-        """
-        True  → tem conflito (NÃO DECLARA ou nenhum marcado)
-        False → sem conflito (DECLARA)
-        """
-        if self._conflito is None:
-            resultado = _verificar_conflito(self.texto)
-            # True = declara = sem conflito
-            # False ou None = conflito
-            self._conflito = resultado is not True
-        return self._conflito
+        blocos = self._get_blocos()
+        if blocos:
+            return _extrair_votos_instrucao(blocos[0][1])
+        return []
 
     def gerar_nome_arquivo(self):
-        cpf = self.extrair_cpf() or "SEM_CPF"
+        blocos = self._get_blocos()
 
-        if self._tem_conflito():
-            return f"{cpf} - CONFLITO DE INTERESSE.pdf"
+        if not blocos:
+            cpf = extrair_cpf(self.texto) or "SEM_CPF"
+            return f"{cpf} - SEM_VOTO.pdf"
 
-        votos = self.extrair_votos()
-        votos_str = ", ".join(votos) if votos else "SEM_VOTO"
-        return f"{cpf} - {votos_str}.pdf"
+        resultados = []
+        for cpf, linhas in blocos:
+            if _verificar_conflito(linhas):
+                resultados.append(f"{cpf} - CONFLITO DE INTERESSE")
+            else:
+                votos = _extrair_votos_instrucao(linhas)
+                votos_str = ", ".join(votos) if votos else "SEM_VOTO"
+                resultados.append(f"{cpf} - {votos_str}")
+
+        if len(resultados) == 1:
+            return f"{resultados[0]}.pdf"
+        else:
+            primeiro = resultados[0]
+            return f"{primeiro} (+{len(resultados)-1}).pdf"
