@@ -85,6 +85,10 @@ OPCAO_MARCADA_RE = re.compile(
     r"^\s*\(\s*[xX]\s*\)\s*(.*)",
 )
 
+OPCAO_VAZIA_RE = re.compile(
+    r"^\([^a-zA-Z0-9]{1,10}\)",
+)
+
 # =============================================================================
 # EXTRAÇÃO LINEAR
 # =============================================================================
@@ -252,55 +256,88 @@ def detectar_deliberacoes_presentes(texto: str):
     return presentes
 
 # =============================================================================
-# EXTRAÇÃO DE WIDGETS (form fields)
+# DETECÇÃO VISUAL — X em camada sobreposta (Docusign widget)
 # =============================================================================
 
-def extrair_votos_widgets(pdf) -> dict[int, str]:
-    """
-    Lê form fields (widgets) do PDF — usados quando o x está em
-    camada de anotação e não é extraído pelo fluxo de texto normal.
-    """
-    resultados: dict[int, str] = {}
+def _tem_x_visual(img, x0_pdf: float, top_pdf: float, bottom_pdf: float,
+                  scale: float, threshold: float = 0.09) -> bool:
+    img_x0 = max(0, int(x0_pdf * scale))
+    img_y0 = max(0, int(top_pdf * scale))
+    img_x1 = min(img.width,  int((x0_pdf + 20) * scale))
+    img_y1 = min(img.height, int(bottom_pdf * scale))
 
+    recorte = img.crop((img_x0, img_y0, img_x1, img_y1))
+    total = recorte.width * recorte.height
+    if total == 0:
+        return False
+
+    escuros = sum(
+        1 for r, g, b in recorte.getdata()
+        if r < 128 and g < 128 and b < 128
+    )
+    return (escuros / total) > threshold
+
+
+def extrair_votos_visual(pdf) -> dict[int, str]:
+    resultados: dict[int, str] = {}
     try:
-        for page in pdf.pages:
-            widgets = page.widgets
-            if not widgets:
-                continue
-            for w in widgets:
-                valor = w.get("value") or w.get("V") or ""
-                if not valor or str(valor).strip() in ("", "Off", "N"):
+        import pypdfium2 as pdfium
+
+        caminho = pdf.stream.name
+        doc_pdfium = pdfium.PdfDocument(caminho)
+        scale = 2.0
+        delib_atual = None
+
+        for i, pagina_plumber in enumerate(pdf.pages):
+            page_pdfium = doc_pdfium[i]
+            bitmap = page_pdfium.render(scale=scale)
+            img = bitmap.to_pil()
+            page_pdfium.close()
+
+            words = pagina_plumber.extract_words(keep_blank_chars=True) or []
+
+            grupos: dict[int, list] = {}
+            for w in words:
+                key = round(w["top"])
+                grupos.setdefault(key, []).append(w)
+
+            for top_key in sorted(grupos):
+                ws = sorted(grupos[top_key], key=lambda w: w["x0"])
+                linha_texto = " ".join(w["text"] for w in ws).strip()
+
+                m_b = CABECALHO_B_RE.match(linha_texto)
+                if m_b:
+                    delib_atual = int(m_b.group(1))
                     continue
 
-                # tenta encontrar o texto ao redor do widget para classificar
-                x0 = w.get("x0", 0)
-                top = w.get("top", 0)
+                # debug para linhas curtas com parêntese
+                if "(" in linha_texto and len(linha_texto) < 30:
+                    print(f"[DEBUG VISUAL] repr={repr(linha_texto)}")
 
-                # busca texto próximo na mesma página
-                palavras = page.extract_words() or []
-                vizinhos = [
-                    p["text"] for p in palavras
-                    if abs(p["top"] - top) <= 15 and p["x0"] > x0
-                ]
-                texto_vizinho = " ".join(vizinhos[:8])
+                if not OPCAO_VAZIA_RE.match(linha_texto):
+                    continue
 
-                # tenta identificar deliberação pela posição vertical
-                # procura cabeçalhos na página
-                texto_pagina = page.extract_text() or ""
-                linhas = texto_pagina.splitlines()
+                if delib_atual is None or delib_atual in resultados:
+                    continue
 
-                delib_atual = None
-                for linha in linhas:
-                    m_b = CABECALHO_B_RE.match(linha.strip())
-                    if m_b:
-                        delib_atual = int(m_b.group(1))
+                primeiro = ws[0]
+                x0  = float(primeiro["x0"])
+                top = float(primeiro["top"])
+                bot = float(primeiro["bottom"])
 
-                if delib_atual and texto_vizinho:
-                    sigla = classificar_opcao_linha(texto_vizinho, delib_atual)
-                    if sigla and delib_atual not in resultados:
+                tem_x = _tem_x_visual(img, x0, top, bot, scale)
+                print(f"[DEBUG VISUAL] delib={delib_atual} top={top} tem_x={tem_x} linha={repr(linha_texto[:40])}")
+
+                if tem_x:
+                    sigla = classificar_opcao_linha(linha_texto, delib_atual)
+                    print(f"[DEBUG VISUAL] sigla={sigla}")
+                    if sigla:
                         resultados[delib_atual] = sigla
+
+        doc_pdfium.close()
+
     except Exception as e:
-        logging.warning("Erro ao ler widgets: %s", e)
+        logging.warning("Erro na detecção visual: %s", e)
 
     return resultados
 
@@ -315,9 +352,20 @@ def extrair_votos(pdf, texto: str | None = None):
             texto += (page.extract_text() or "") + "\n"
 
     presentes = detectar_deliberacoes_presentes(texto)
-    resultados_linear, _  = extrair_votos_linear_com_lookahead(texto)
+    resultados_linear, _   = extrair_votos_linear_com_lookahead(texto)
     resultados_espacial, _ = extrair_votos_espacial(pdf)
-    resultados_widgets     = extrair_votos_widgets(pdf)
+
+    votos_faltando = [
+        n for n in presentes
+        if n not in resultados_linear and n not in resultados_espacial
+    ]
+    print(f"[DEBUG] presentes={presentes} linear={list(resultados_linear)} espacial={list(resultados_espacial)} faltando={votos_faltando}")
+
+    resultados_visual = {}
+    if votos_faltando:
+        print("[DEBUG] chamando extrair_votos_visual")
+        resultados_visual = extrair_votos_visual(pdf)
+        print(f"[DEBUG] visual retornou: {resultados_visual}")
 
     resultados_final = {}
     for num in range(1, NUM_DELIBERACOES + 1):
@@ -327,8 +375,8 @@ def extrair_votos(pdf, texto: str | None = None):
             resultados_final[num] = resultados_linear[num]
         elif num in resultados_espacial:
             resultados_final[num] = resultados_espacial[num]
-        elif num in resultados_widgets:
-            resultados_final[num] = resultados_widgets[num]
+        elif num in resultados_visual:
+            resultados_final[num] = resultados_visual[num]
         else:
             resultados_final[num] = "NV"
 
