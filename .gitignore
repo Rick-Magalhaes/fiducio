@@ -5,6 +5,12 @@ venv/
 # python
 __pycache__/
 *.pyc
+*.pyo
+
+# pyinstaller
+build/
+dist/
+*.spec
 
 # arquivos locais
 data/input/*
@@ -16,3 +22,8 @@ data/output/*
 
 # logs
 *.log
+*.csv
+
+# sistema
+.DS_Store
+Thumbs.db
