@@ -20,6 +20,7 @@ ASSESSORES_LEGAIS = {
     "MM":   "Machado Meyer Advogados",
     "FEL":  "Felsberg Advogados",
     "CTP":  "Costa Tavares Paes Advogados",
+    "SOB": "Sob"
 }
 
 ASSESSORES_FINANCEIROS = {
@@ -32,7 +33,7 @@ ASSESSORES_FINANCEIROS = {
 MAPA_VOTOS = {
     "A":  "sim",
     "R":  "não",
-    "AB": "ab",
+    "AB": "abstenção",
     "NV": "nv",
 }
 
