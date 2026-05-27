@@ -63,7 +63,7 @@ def _extrair_votos_alfm(linhas: list[str]) -> list[str]:
 
 class InstrucaoALFM(ProcuracaoBase):
     """
-    Instrução de Voto a Distância no formato ALFM Easy Voting (BTG/Oncoclínicas).
+    Instrução de Voto a Distância no formato ALFM Easy Voting 
     
     Diferenças do BTGVoto (instrução do agente fiduciário):
     - CPF na tabela do cabeçalho: "CPF/CNPJ do Debenturista: XXXXXXXXXXX"
