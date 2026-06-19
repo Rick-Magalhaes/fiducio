@@ -7,6 +7,7 @@ import unicodedata
 # =============================================================================
 
 ESCRITORIOS = [
+    ("lefosse",           "LEF"),
     ("machado meyer",      "MM"),
     ("sacramone",          "SOB"),
     ("costa tavares",      "CTP"),

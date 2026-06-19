@@ -7,6 +7,7 @@ import customtkinter as ctk
 from app.core.processor import ProcessadorProcuracoes
 from app.models.registry import MODELOS
 from app.services.excel_services import carregar_arquivos, preencher_excel
+from app.dashboard.server import PainelQuorum
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -35,8 +36,10 @@ class FiducioApp(ctk.CTk):
         self.pasta_excel_path: Path | None = None
         self.excel_path: Path | None = None
         self.modelo_selecionado: str = list(MODELOS.keys())[0]
+        self.painel_quorum = PainelQuorum()
 
         self._build()
+        self.protocol("WM_DELETE_WINDOW", self._ao_fechar)
 
     # ── logo ──────────────────────────────────────────────────────────────────
 
@@ -204,6 +207,54 @@ class FiducioApp(ctk.CTk):
                 target=self._processar_excel, daemon=True
             ).start(),
         ).pack(anchor="e", pady=(12, 0))
+
+        self._divider(outer)
+
+        # ── painel de quórum ──────────────────────────────────────────────────
+        self._section_label(outer, "PAINEL DE QUÓRUM")
+
+        self._label(outer, "USA A PLANILHA SELECIONADA ACIMA, NA SEÇÃO PREENCHER EXCEL")
+
+        row_painel = ctk.CTkFrame(outer, fg_color="transparent")
+        row_painel.pack(fill="x", pady=(8, 0))
+
+        self.btn_painel = ctk.CTkButton(
+            row_painel,
+            text="Abrir Painel de Quórum",
+            fg_color=SURFACE,
+            hover_color="#1f3a52",
+            text_color=ACCENT,
+            border_color=ACCENT,
+            border_width=1,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=40,
+            command=self._abrir_painel_quorum,
+        )
+        self.btn_painel.pack(side="left")
+
+        self.btn_painel_encerrar = ctk.CTkButton(
+            row_painel,
+            text="Encerrar painel",
+            fg_color="transparent",
+            hover_color=SURFACE,
+            text_color=MUTED,
+            border_color=BORDER,
+            border_width=1,
+            font=ctk.CTkFont(size=12),
+            height=40,
+            width=120,
+            command=self._encerrar_painel_quorum,
+        )
+        self.btn_painel_encerrar.pack(side="left", padx=(8, 0))
+
+        self.painel_status_label = ctk.CTkLabel(
+            outer,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=MUTED,
+            anchor="w",
+        )
+        self.painel_status_label.pack(anchor="w", pady=(8, 0))
 
         self._divider(outer)
 
@@ -446,6 +497,36 @@ class FiducioApp(ctk.CTk):
                 f"{len(resultado.nao_encontrados)} não encontrado(s)"
             )
         )
+
+    # ── painel de quórum ──────────────────────────────────────────────────────
+
+    def _abrir_painel_quorum(self):
+        if not self.excel_path:
+            self.painel_status_label.configure(
+                text="⚠  Selecione a planilha Excel na seção acima antes de abrir o painel."
+            )
+            return
+
+        self.painel_status_label.configure(text="Abrindo painel...")
+
+        def tarefa():
+            try:
+                self.painel_quorum.abrir(self.excel_path)
+                self.painel_status_label.configure(
+                    text=f"✓  Painel aberto no navegador — observando: {self.excel_path.name}"
+                )
+            except Exception as e:
+                self.painel_status_label.configure(text=f"✗  Erro ao abrir o painel: {e}")
+
+        threading.Thread(target=tarefa, daemon=True).start()
+
+    def _encerrar_painel_quorum(self):
+        self.painel_quorum.encerrar()
+        self.painel_status_label.configure(text="Painel encerrado.")
+
+    def _ao_fechar(self):
+        self.painel_quorum.encerrar()
+        self.destroy()
 
 
 if __name__ == "__main__":

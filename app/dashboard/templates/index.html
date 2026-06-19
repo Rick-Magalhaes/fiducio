@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Quórum — Fiducio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0e1a17;
+    --panel: #122723;
+    --panel-border: #1f3a35;
+    --ink: #eef3f1;
+    --muted: #8fa8a2;
+    --accent: #4fd1ae;
+    --accent-soft: rgba(79,209,174,.14);
+    --warn: #e0a458;
+    --rule: #1f3a35;
+    --serif: 'Source Serif 4', Georgia, serif;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+
+  body{
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(79,209,174,.08), transparent 60%);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 48px 56px 72px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: .001s !important; transition-duration: .001s !important; }
+  }
+
+  /* ---------- header ---------- */
+  .masthead{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 20px;
+    margin-bottom: 40px;
+  }
+  .masthead .eyebrow{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+  .masthead h1{
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 32px;
+    margin: 0;
+    letter-spacing: -.01em;
+  }
+  .masthead .meta{
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .live-dot{
+    display:inline-block;
+    width:7px; height:7px;
+    border-radius:50%;
+    background: var(--accent);
+    margin-right: 6px;
+    box-shadow: 0 0 0 0 var(--accent-soft);
+    animation: pulse 2.2s infinite;
+    position: relative; top: -1px;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(79,209,174,.5); }
+    70%{ box-shadow: 0 0 0 6px rgba(79,209,174,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(79,209,174,0); }
+  }
+
+  /* ---------- layout ---------- */
+  .grid{
+    display:grid;
+    grid-template-columns: 360px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  @media (max-width: 900px){
+    .grid{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 28px;
+  }
+  .panel-title{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 20px;
+    display:flex;
+    justify-content: space-between;
+  }
+
+  /* ---------- gauge (signature element) ---------- */
+  .gauge-wrap{ display:flex; flex-direction:column; align-items:center; }
+  .gauge-figure{ position:relative; width:280px; height:160px; }
+  .gauge-readout{
+    position:absolute;
+    bottom: 6px; left:0; right:0;
+    text-align:center;
+  }
+  .gauge-readout .pct{
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 52px;
+    line-height: 1;
+    letter-spacing: -.02em;
+  }
+  .gauge-readout .pct .sign{ font-size: 28px; color: var(--muted); font-weight: 400; }
+  .gauge-readout .label{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .threshold-tag{
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--warn);
+    text-align:center;
+    margin-top: 4px;
+  }
+
+  .stat-rows{ margin-top: 24px; }
+  .stat-row{
+    display:flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 11px 0;
+    border-top: 1px solid var(--rule);
+    font-size: 13.5px;
+  }
+  .stat-row:first-child{ border-top: none; }
+  .stat-row .k{ color: var(--muted); }
+  .stat-row .v{ font-family: var(--mono); font-weight: 500; }
+  .stat-row .v small{ color: var(--muted); font-weight: 400; margin-left: 6px; }
+
+  /* ---------- right column ---------- */
+  .summary-cards{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 20px 20px 18px;
+    display:flex;
+    flex-direction:column;
+    justify-content: space-between;
+    min-height: 92px;
+  }
+  .card .num{
+    font-family: var(--serif);
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .card .lbl{
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .card.accent{ border-color: rgba(79,209,174,.35); }
+  .card.accent .num{ color: var(--accent); }
+
+  .status-bar{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 16px 22px;
+    margin-bottom: 24px;
+  }
+  .status-bar .msg{
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .status-bar .msg.atingido{ color: var(--accent); }
+  .status-bar .msg.nao-atingido{ color: var(--warn); }
+  .status-bar .detail{
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .limiar-control{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .limiar-control label{
+    letter-spacing: .04em;
+  }
+  .limiar-control input{
+    width: 56px;
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    text-align: right;
+    padding: 5px 6px;
+    border-radius: 3px;
+  }
+  .limiar-control input:focus{
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  /* ---------- investor table ---------- */
+  table{ width:100%; border-collapse: collapse; font-size: 13px; }
+  thead th{
+    text-align:left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--rule);
+    padding: 0 10px 10px 0;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  thead th.num, tbody td.num{ text-align: right; }
+  tbody td{
+    padding: 13px 10px 13px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  tbody tr:last-child td{ border-bottom: none; }
+  .nome{ font-weight: 500; line-height: 1.3; }
+  .qtd, .pct{ font-family: var(--mono); }
+  .badge{
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .06em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+  .badge.ok{ background: var(--accent-soft); color: var(--accent); }
+  .badge.fora{ background: rgba(224,164,88,.14); color: var(--warn); }
+  .badge.pendente{ background: rgba(255,255,255,.06); color: var(--muted); }
+
+  .empty-note{
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 14px;
+    line-height: 1.5;
+  }
+
+  footer{
+    margin-top: 36px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+  <div class="masthead">
+    <div>
+      <p class="eyebrow">Fiducio · Auxiliar de Assembleias</p>
+      <h1>Painel de Quórum</h1>
+    </div>
+    <div class="meta">
+      <div><span class="live-dot"></span>Atualização automática ativa</div>
+      <div id="arquivo-nome">—</div>
+      <div id="hora-atualizacao">aguardando dados…</div>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <div class="panel">
+      <p class="panel-title"><span>Quórum em circulação</span></p>
+      <div class="gauge-wrap">
+        <div class="gauge-figure">
+          <svg viewBox="0 0 280 160" width="280" height="160">
+            <path d="M 30 150 A 110 110 0 0 1 250 150" fill="none" stroke="#1f3a35" stroke-width="16" stroke-linecap="round"/>
+            <path id="gauge-arc" d="M 30 150 A 110 110 0 0 1 250 150" fill="none" stroke="#4fd1ae" stroke-width="16" stroke-linecap="round" stroke-dasharray="0 1000"/>
+          </svg>
+          <div class="gauge-readout">
+            <div class="pct" id="quorum-pct">0<span class="sign">%</span></div>
+            <div class="label">do volume em circulação</div>
+          </div>
+        </div>
+        <div class="threshold-tag" id="threshold-tag"></div>
+      </div>
+
+      <div class="stat-rows">
+        <div class="stat-row"><span class="k">Total emitido</span><span class="v" id="st-total">—</span></div>
+        <div class="stat-row"><span class="k">Fora de circulação</span><span class="v" id="st-fora">—</span></div>
+        <div class="stat-row"><span class="k">Em circulação</span><span class="v" id="st-circ">—</span></div>
+        <div class="stat-row"><span class="k">Presente (OK)</span><span class="v" id="st-quorum">—</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="summary-cards">
+        <div class="card">
+          <div class="num" id="card-investidores">0</div>
+          <div class="lbl">Investidores na base</div>
+        </div>
+        <div class="card accent">
+          <div class="num" id="card-ok">0</div>
+          <div class="lbl">Confirmados (OK)</div>
+        </div>
+        <div class="card">
+          <div class="num" id="card-pendentes">0</div>
+          <div class="lbl">Pendentes</div>
+        </div>
+      </div>
+
+      <div class="status-bar">
+        <span class="msg" id="status-msg">—</span>
+        <span class="limiar-control">
+          <label for="limiar-input">quórum exigido</label>
+          <input type="number" id="limiar-input" min="0" max="100" step="0.1" value="50">%
+        </span>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title"><span>Comitentes</span><span id="tbl-count"></span></p>
+        <table>
+          <thead>
+            <tr>
+              <th>Comitente</th>
+              <th class="num">Quantidade</th>
+              <th class="num">% do ativo</th>
+              <th>Presença</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-body">
+          </tbody>
+        </table>
+        <p class="empty-note" id="empty-note" style="display:none;">
+          Nenhum comitente carregado ainda.
+        </p>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Painel de leitura — fonte de dados: aba QUÓRUM / COMITENTES do arquivo .xlsx selecionado · não recalcula fórmulas, apenas exibe o que o Excel já calculou</footer>
+
+<script src="/static/socket.io.min.js"></script>
+<script>
+const socket = io();
+
+const fmtInt = n => Math.round(n).toLocaleString('pt-BR');
+const fmtPct = n => (n * 100).toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + '%';
+
+function setArc(pct){
+  const path = document.getElementById('gauge-arc');
+  const totalLen = 345; // comprimento aproximado do arco
+  const len = Math.max(0, Math.min(1, pct)) * totalLen;
+  path.setAttribute('stroke-dasharray', `${len} 1000`);
+}
+
+function animateNumber(el, to, isPct){
+  const from = parseFloat(el.dataset.raw || '0');
+  const start = performance.now();
+  const dur = 700;
+  function step(t){
+    const p = Math.min(1, (t - start) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const val = from + (to - from) * eased;
+    el.textContent = isPct ? (val * 100).toFixed(1) : fmtInt(val);
+    if (p < 1) requestAnimationFrame(step);
+    else el.dataset.raw = to;
+  }
+  requestAnimationFrame(step);
+}
+
+function render(data){
+  const q = data.quorum;
+
+  document.getElementById('arquivo-nome').textContent = data.arquivo;
+  document.getElementById('hora-atualizacao').textContent =
+    'última leitura ' + new Date().toLocaleTimeString('pt-BR');
+
+  setArc(q.presentes_pct_sobre_total);
+
+  const pctEl = document.querySelector('#quorum-pct');
+  const target = q.presentes_pct_sobre_total * 100;
+  let cur = parseFloat(pctEl.dataset.raw || '0');
+  const start = performance.now();
+  function step(t){
+    const p = Math.min(1, (t-start)/700);
+    const eased = 1 - Math.pow(1-p, 3);
+    const val = cur + (target - cur) * eased;
+    pctEl.innerHTML = val.toFixed(1) + '<span class="sign">%</span>';
+    if(p<1) requestAnimationFrame(step); else pctEl.dataset.raw = target;
+  }
+  requestAnimationFrame(step);
+
+  document.getElementById('st-total').innerHTML = fmtInt(q.total) + ' <small>títulos</small>';
+  document.getElementById('st-fora').innerHTML = fmtInt(q.fora_circulacao) + ' <small>' + fmtPct(q.fora_circulacao_pct) + '</small>';
+  document.getElementById('st-circ').innerHTML = fmtInt(q.em_circulacao) + ' <small>títulos</small>';
+  document.getElementById('st-quorum').innerHTML = fmtInt(q.quorum_qtd) + ' <small>' + fmtPct(q.quorum_pct) + ' do em circulação</small>';
+
+  const investidores = data.investidores || [];
+  const ok = investidores.filter(i => i.status === 'OK').length;
+  document.getElementById('card-investidores').textContent = investidores.length;
+  document.getElementById('card-ok').textContent = ok;
+  document.getElementById('card-pendentes').textContent = investidores.length - ok - investidores.filter(i=>i.status==='FORA').length;
+
+  window._ultimoPercentual = q.presentes_pct_sobre_total;
+  atualizarStatusQuorum();
+
+  const tbody = document.getElementById('tbl-body');
+  tbody.innerHTML = '';
+  document.getElementById('tbl-count').textContent = investidores.length + ' registro(s)';
+  document.getElementById('empty-note').style.display = investidores.length ? 'none' : 'block';
+
+  investidores.forEach(inv => {
+    const tr = document.createElement('tr');
+    const badgeClass = inv.status === 'OK' ? 'ok' : (inv.status === 'FORA' ? 'fora' : 'pendente');
+    const badgeLabel = inv.status === 'OK' ? 'OK' : (inv.status === 'FORA' ? 'Fora' : 'Pendente');
+    tr.innerHTML = `
+      <td class="nome">${inv.nome}</td>
+      <td class="num qtd">${fmtInt(inv.quantidade)}</td>
+      <td class="num pct">${fmtPct(inv.percentual)}</td>
+      <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function atualizarStatusQuorum(){
+  const statusMsg = document.getElementById('status-msg');
+  const limiarInput = document.getElementById('limiar-input');
+  const limiar = (parseFloat(limiarInput.value) || 0) / 100;
+  const atual = window._ultimoPercentual ?? 0;
+
+  if (atual >= limiar) {
+    statusMsg.textContent = `Quórum de ${limiarInput.value}% atingido`;
+    statusMsg.className = 'msg atingido';
+  } else {
+    statusMsg.textContent = `Quórum de ${limiarInput.value}% ainda não atingido`;
+    statusMsg.className = 'msg nao-atingido';
+  }
+}
+
+document.getElementById('limiar-input').addEventListener('input', atualizarStatusQuorum);
+
+socket.on('update', render);
+socket.on('connect', () => socket.emit('request_update'));
+</script>
+</body>
+</html>

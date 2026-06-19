@@ -16,6 +16,7 @@ COL_STATUS     = "I"
 COL_VOTOS_INI  = 12   # coluna L
 
 ASSESSORES_LEGAIS = {
+     "LEF":  "Lefosse",
     "PGA":  "Pinheiro Guimarães Advogados & CSW Advogados",
     "MM":   "Machado Meyer Advogados",
     "FEL":  "Felsberg Advogados",
