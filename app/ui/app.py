@@ -35,6 +35,7 @@ class FiducioApp(ctk.CTk):
         self.pasta_pdf_path: Path | None = None
         self.pasta_excel_path: Path | None = None
         self.excel_path: Path | None = None
+        self.arquivos_b3_paths: list[Path] = []
         self.modelo_selecionado: str = list(MODELOS.keys())[0]
         self.painel_quorum = PainelQuorum()
 
@@ -213,14 +214,22 @@ class FiducioApp(ctk.CTk):
         # ── painel de quórum ──────────────────────────────────────────────────
         self._section_label(outer, "PAINEL DE QUÓRUM")
 
-        self._label(outer, "USA A PLANILHA SELECIONADA ACIMA, NA SEÇÃO PREENCHER EXCEL")
+        self._label(outer, "ARQUIVOS DA LISTAGEMB3 (UM OU MAIS — UMA SÉRIE POR ARQUIVO)")
+        row_b3 = ctk.CTkFrame(outer, fg_color="transparent")
+        row_b3.pack(fill="x", pady=(4, 0))
+
+        self.field_arquivos_b3 = self._path_field(row_b3)
+        self.field_arquivos_b3.pack(side="left", fill="x", expand=True)
+        self._browse_btn(row_b3, "Selecionar", self._pick_arquivos_b3).pack(
+            side="left", padx=(8, 0)
+        )
 
         row_painel = ctk.CTkFrame(outer, fg_color="transparent")
-        row_painel.pack(fill="x", pady=(8, 0))
+        row_painel.pack(fill="x", pady=(12, 0))
 
         self.btn_painel = ctk.CTkButton(
             row_painel,
-            text="Abrir Painel de Quórum",
+            text="Iniciar nova assembleia",
             fg_color=SURFACE,
             hover_color="#1f3a52",
             text_color=ACCENT,
@@ -231,6 +240,20 @@ class FiducioApp(ctk.CTk):
             command=self._abrir_painel_quorum,
         )
         self.btn_painel.pack(side="left")
+
+        self.btn_painel_legado = ctk.CTkButton(
+            row_painel,
+            text="Abrir Template existente",
+            fg_color="transparent",
+            hover_color=SURFACE,
+            text_color=TEXT,
+            border_color=BORDER,
+            border_width=1,
+            font=ctk.CTkFont(size=12),
+            height=40,
+            command=self._abrir_painel_legado,
+        )
+        self.btn_painel_legado.pack(side="left", padx=(8, 0))
 
         self.btn_painel_encerrar = ctk.CTkButton(
             row_painel,
@@ -389,6 +412,16 @@ class FiducioApp(ctk.CTk):
             self.excel_path = Path(path)
             self._set_field(self.field_excel, path)
 
+    def _pick_arquivos_b3(self):
+        paths = ctk.filedialog.askopenfilenames(
+            title="Selecione um ou mais arquivos ListagemB3.xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+        )
+        if paths:
+            self.arquivos_b3_paths = [Path(p) for p in paths]
+            nomes = ", ".join(p.name for p in self.arquivos_b3_paths)
+            self._set_field(self.field_arquivos_b3, nomes)
+
     def _set_field(self, field, value):
         field.configure(state="normal")
         field.delete(0, "end")
@@ -501,9 +534,9 @@ class FiducioApp(ctk.CTk):
     # ── painel de quórum ──────────────────────────────────────────────────────
 
     def _abrir_painel_quorum(self):
-        if not self.excel_path:
+        if not self.arquivos_b3_paths:
             self.painel_status_label.configure(
-                text="⚠  Selecione a planilha Excel na seção acima antes de abrir o painel."
+                text="⚠  Selecione um ou mais arquivos da ListagemB3 antes de iniciar."
             )
             return
 
@@ -511,7 +544,28 @@ class FiducioApp(ctk.CTk):
 
         def tarefa():
             try:
-                self.painel_quorum.abrir(self.excel_path)
+                self.painel_quorum.abrir(caminhos_b3=self.arquivos_b3_paths)
+                nomes = ", ".join(p.name for p in self.arquivos_b3_paths)
+                self.painel_status_label.configure(
+                    text=f"✓  Painel aberto no navegador — arquivos: {nomes}"
+                )
+            except Exception as e:
+                self.painel_status_label.configure(text=f"✗  Erro ao abrir o painel: {e}")
+
+        threading.Thread(target=tarefa, daemon=True).start()
+
+    def _abrir_painel_legado(self):
+        if not self.excel_path:
+            self.painel_status_label.configure(
+                text="⚠  Selecione a planilha Excel na seção 'Preencher Excel' antes de abrir o painel."
+            )
+            return
+
+        self.painel_status_label.configure(text="Abrindo painel...")
+
+        def tarefa():
+            try:
+                self.painel_quorum.abrir(caminho_excel=self.excel_path)
                 self.painel_status_label.configure(
                     text=f"✓  Painel aberto no navegador — observando: {self.excel_path.name}"
                 )

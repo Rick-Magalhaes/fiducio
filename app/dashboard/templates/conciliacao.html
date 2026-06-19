@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conciliação — Fiducio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0e1a17;
+    --panel: #122723;
+    --panel-border: #1f3a35;
+    --ink: #eef3f1;
+    --muted: #8fa8a2;
+    --accent: #4fd1ae;
+    --accent-soft: rgba(79,209,174,.14);
+    --warn: #e0a458;
+    --warn-soft: rgba(224,164,88,.14);
+    --rule: #1f3a35;
+    --serif: 'Source Serif 4', Georgia, serif;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    background-image: radial-gradient(ellipse 900px 500px at 15% -10%, rgba(79,209,174,.08), transparent 60%);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 48px 56px 72px;
+  }
+
+  .masthead{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 20px;
+    margin-bottom: 32px;
+  }
+  .masthead .eyebrow{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+  .masthead h1{
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 32px;
+    margin: 0;
+    letter-spacing: -.01em;
+  }
+
+  nav.tabs{
+    display:flex;
+    gap: 4px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--rule);
+  }
+  nav.tabs a{
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 10px 18px;
+    border-bottom: 2px solid transparent;
+  }
+  nav.tabs a.active{
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .summary-cards{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 16px 18px;
+  }
+  .card .num{ font-family: var(--serif); font-size: 24px; font-weight: 600; }
+  .card .lbl{ font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+  .card.accent .num{ color: var(--accent); }
+  .card.warn .num{ color: var(--warn); }
+
+  .filtros{
+    display:flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .filtros input[type=text]{
+    flex:1;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--ink);
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-family: var(--sans);
+    font-size: 13.5px;
+  }
+  .filtros input[type=text]:focus{ outline:none; border-color: var(--accent); }
+  .filtros select{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--ink);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-family: var(--sans);
+    font-size: 13px;
+    width: 160px;
+  }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  table{ width:100%; border-collapse: collapse; font-size: 13px; }
+  thead th{
+    text-align:left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--bg);
+    border-bottom: 1px solid var(--rule);
+    padding: 12px 14px;
+    font-weight: 500;
+  }
+  thead th.num{ text-align:right; }
+  tbody td{
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td{ border-bottom: none; }
+  tbody tr:hover{ background: rgba(255,255,255,.02); }
+  .nome{ font-weight: 500; }
+  .subnome{ font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .num{ text-align:right; font-family: var(--mono); }
+
+  .gestor-input{
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    color: var(--ink);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+    width: 100%;
+    font-family: var(--sans);
+    margin-top: 4px;
+  }
+  .gestor-input:focus{ outline:none; border-color: var(--accent); }
+  .gestor-input::placeholder{ color: var(--muted); }
+
+  .acoes{ display:flex; gap: 4px; align-items:center; }
+  .badge{
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .05em;
+    padding: 3px 9px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+  .badge.ok{ background: var(--accent-soft); color: var(--accent); }
+  .badge.fora{ background: var(--warn-soft); color: var(--warn); }
+  .badge.pendente{ background: rgba(255,255,255,.06); color: var(--muted); }
+
+  .btn-acao{
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 3px;
+    width: 26px; height: 26px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .btn-acao:hover{ border-color: var(--accent); color: var(--accent); }
+  .btn-acao.ativo-ok{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .btn-acao.ativo-fora{ background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+
+  .vazio{
+    padding: 48px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .paginacao{
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .paginacao button{
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    color: var(--ink);
+    border-radius: 3px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 12px;
+  }
+  .paginacao button:disabled{ opacity:.3; cursor:not-allowed; }
+
+  footer{
+    margin-top: 36px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+  <div class="masthead">
+    <div>
+      <p class="eyebrow">Fiducio · Auxiliar de Assembleias</p>
+      <h1>Conciliação</h1>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <a href="/">Importar</a>
+    <a href="/conciliacao" class="active">Conciliação</a>
+    <a href="/quorum">Quórum</a>
+  </nav>
+
+  <div class="summary-cards">
+    <div class="card"><div class="num" id="card-total">—</div><div class="lbl">Total</div></div>
+    <div class="card accent"><div class="num" id="card-ok">—</div><div class="lbl">Confirmados (OK)</div></div>
+    <div class="card warn"><div class="num" id="card-fora">—</div><div class="lbl">Fora</div></div>
+    <div class="card"><div class="num" id="card-pendente">—</div><div class="lbl">Pendentes</div></div>
+  </div>
+
+  <div class="filtros">
+    <input type="text" id="busca" placeholder="Buscar por comitente, gestor ou CPF/CNPJ...">
+    <select id="filtro-tipo">
+      <option value="todos">Todos os tipos</option>
+      <option value="PJ">Pessoa jurídica</option>
+      <option value="PF">Pessoa física</option>
+    </select>
+    <select id="filtro-status">
+      <option value="todos">Todos os status</option>
+      <option value="pendente">Pendentes</option>
+      <option value="ok">OK</option>
+      <option value="fora">Fora</option>
+    </select>
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead>
+        <tr>
+          <th>Comitente / Gestor</th>
+          <th>Tipo</th>
+          <th class="num">Quantidade</th>
+          <th class="num">%</th>
+          <th>Série</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="vazio" id="vazio" style="display:none;">Nenhuma sessão importada ainda. Vá para a aba Importar.</div>
+    <div class="paginacao" id="paginacao" style="display:none;">
+      <span id="info-pagina"></span>
+      <div>
+        <button id="btn-anterior">← anterior</button>
+        <button id="btn-proxima">próxima →</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>As mudanças aqui ficam na sessão atual — gere o Excel na aba Quórum quando finalizar a conciliação.</footer>
+
+<script src="/static/socket.io.min.js"></script>
+<script>
+const socket = io();
+const PAGE_SIZE = 25;
+let paginaAtual = 0;
+let resultadosCompletos = [];
+
+const fmtInt = n => Math.round(n).toLocaleString('pt-BR');
+const fmtPct = n => (n * 100).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '%';
+
+let debounceTimer = null;
+function buscarComDebounce(){
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => { paginaAtual = 0; carregarResultados(); }, 250);
+}
+
+document.getElementById('busca').addEventListener('input', buscarComDebounce);
+document.getElementById('filtro-tipo').addEventListener('change', () => { paginaAtual = 0; carregarResultados(); });
+document.getElementById('filtro-status').addEventListener('change', () => { paginaAtual = 0; carregarResultados(); });
+
+async function carregarResultados(){
+  const termo = document.getElementById('busca').value;
+  const tipo = document.getElementById('filtro-tipo').value;
+  const status = document.getElementById('filtro-status').value;
+
+  const params = new URLSearchParams({ termo, tipo, status });
+  const resp = await fetch('/api/buscar?' + params.toString());
+  const data = await resp.json();
+  resultadosCompletos = data.resultados || [];
+  renderTabela();
+}
+
+function renderTabela(){
+  const tbody = document.getElementById('tbody');
+  const vazio = document.getElementById('vazio');
+  const paginacao = document.getElementById('paginacao');
+
+  if (resultadosCompletos.length === 0) {
+    tbody.innerHTML = '';
+    vazio.style.display = 'block';
+    vazio.textContent = 'Nenhum resultado para esse filtro.';
+    paginacao.style.display = 'none';
+    return;
+  }
+
+  vazio.style.display = 'none';
+  paginacao.style.display = 'flex';
+
+  const totalPaginas = Math.ceil(resultadosCompletos.length / PAGE_SIZE);
+  const inicio = paginaAtual * PAGE_SIZE;
+  const pagina = resultadosCompletos.slice(inicio, inicio + PAGE_SIZE);
+
+  document.getElementById('info-pagina').textContent =
+    `${inicio + 1}–${Math.min(inicio + PAGE_SIZE, resultadosCompletos.length)} de ${resultadosCompletos.length}`;
+  document.getElementById('btn-anterior').disabled = paginaAtual === 0;
+  document.getElementById('btn-proxima').disabled = paginaAtual >= totalPaginas - 1;
+
+  tbody.innerHTML = pagina.map(item => {
+    const ehPJ = item.tipo_pessoa === 'Jurídica';
+    const principal = ehPJ ? (item.gestor || '<span style="color:var(--warn);">gestor não identificado</span>') : item.nome;
+    const sub = ehPJ ? item.nome : item.documento;
+    const gestorInput = ehPJ
+      ? `<input class="gestor-input" placeholder="Nome do gestor..." value="${item.gestor || ''}" data-idx="${item.idx}" onchange="definirGestor(${item.idx}, this.value)">`
+      : '';
+
+    return `
+      <tr>
+        <td>
+          <div class="nome">${principal}</div>
+          <div class="subnome">${sub}</div>
+          ${gestorInput}
+        </td>
+        <td>${ehPJ ? 'Jurídica' : 'Física'}</td>
+        <td class="num">${fmtInt(item.quantidade)}</td>
+        <td class="num">${fmtPct(item.percentual)}</td>
+        <td style="font-family:var(--mono); font-size:12px; color:var(--muted);">${item.serie}</td>
+        <td>
+          <div class="acoes">
+            <span class="badge ${item.status}">${item.status === 'ok' ? 'OK' : item.status === 'fora' ? 'Fora' : 'Pendente'}</span>
+            <button class="btn-acao ${item.status === 'ok' ? 'ativo-ok' : ''}" title="Marcar OK" onclick="marcar(${item.idx}, 'ok')">✓</button>
+            <button class="btn-acao ${item.status === 'fora' ? 'ativo-fora' : ''}" title="Marcar Fora" onclick="marcar(${item.idx}, 'fora')">✕</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+document.getElementById('btn-anterior').addEventListener('click', () => { paginaAtual--; renderTabela(); });
+document.getElementById('btn-proxima').addEventListener('click', () => { paginaAtual++; renderTabela(); });
+
+async function marcar(idx, status){
+  const item = resultadosCompletos.find(r => r.idx === idx);
+  const novoStatus = item.status === status ? null : status;
+
+  await fetch('/api/marcar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idx, status: novoStatus })
+  });
+
+  item.status = novoStatus || 'pendente';
+  renderTabela();
+  atualizarContadores();
+}
+
+async function definirGestor(idx, gestor){
+  await fetch('/api/definir_gestor', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idx, gestor })
+  });
+  const item = resultadosCompletos.find(r => r.idx === idx);
+  if (item) item.gestor = gestor;
+  renderTabela();
+}
+
+async function atualizarContadores(){
+  const resp = await fetch('/api/sessao');
+  const data = await resp.json();
+  if (!data.carregada) return;
+  document.getElementById('card-total').textContent = data.contagem.total;
+  document.getElementById('card-ok').textContent = data.contagem.ok;
+  document.getElementById('card-fora').textContent = data.contagem.fora;
+  document.getElementById('card-pendente').textContent = data.contagem.pendente;
+}
+
+socket.on('sessao_atualizada', (data) => {
+  if (!data.carregada) return;
+  document.getElementById('card-total').textContent = data.contagem.total;
+  document.getElementById('card-ok').textContent = data.contagem.ok;
+  document.getElementById('card-fora').textContent = data.contagem.fora;
+  document.getElementById('card-pendente').textContent = data.contagem.pendente;
+});
+
+socket.on('connect', () => socket.emit('request_update'));
+
+carregarResultados();
+atualizarContadores();
+</script>
+</body>
+</html>

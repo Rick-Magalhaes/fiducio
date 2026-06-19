@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Importar — Fiducio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0e1a17;
+    --panel: #122723;
+    --panel-border: #1f3a35;
+    --ink: #eef3f1;
+    --muted: #8fa8a2;
+    --accent: #4fd1ae;
+    --accent-soft: rgba(79,209,174,.14);
+    --warn: #e0a458;
+    --warn-soft: rgba(224,164,88,.14);
+    --rule: #1f3a35;
+    --serif: 'Source Serif 4', Georgia, serif;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    background-image: radial-gradient(ellipse 900px 500px at 15% -10%, rgba(79,209,174,.08), transparent 60%);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 48px 56px 72px;
+  }
+
+  .masthead{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 20px;
+    margin-bottom: 32px;
+  }
+  .masthead .eyebrow{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+  .masthead h1{
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 32px;
+    margin: 0;
+    letter-spacing: -.01em;
+  }
+
+  nav.tabs{
+    display:flex;
+    gap: 4px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--rule);
+  }
+  nav.tabs a{
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 10px 18px;
+    border-bottom: 2px solid transparent;
+  }
+  nav.tabs a.active{
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 32px;
+    margin-bottom: 24px;
+  }
+  .panel-title{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 20px;
+  }
+
+  .dropzone{
+    border: 1px dashed var(--panel-border);
+    border-radius: 4px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+  .dropzone:hover, .dropzone.dragover{
+    border-color: var(--accent);
+  }
+  .dropzone .hint{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .dropzone .big{
+    font-size: 15px;
+    font-weight: 500;
+  }
+  input[type=file]{ display:none; }
+
+  .lista-arquivos{ margin-top: 20px; }
+  .arquivo-item{
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 3px;
+    margin-bottom: 8px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+  .arquivo-item button{
+    background: none;
+    border: none;
+    color: var(--warn);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  button.primary{
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 12px 24px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+    margin-top: 20px;
+  }
+  button.primary:disabled{
+    opacity: .4;
+    cursor: not-allowed;
+  }
+  button.primary:hover:not(:disabled){
+    background: rgba(79,209,174,.22);
+  }
+
+  .resultado-import{
+    margin-top: 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .resultado-import .ok{ color: var(--accent); }
+  .resultado-import .aviso{ color: var(--warn); }
+
+  .summary-cards{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .card{
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 16px 18px;
+  }
+  .card .num{ font-family: var(--serif); font-size: 24px; font-weight: 600; }
+  .card .lbl{ font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+
+  .gestor-box{
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+  }
+  .gestor-box p{
+    font-size: 13.5px;
+    color: var(--muted);
+    margin: 0 0 16px;
+    line-height: 1.6;
+  }
+  button.secondary{
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.secondary:hover{ background: var(--bg); }
+
+  .spinner{
+    display:inline-block;
+    width: 13px; height: 13px;
+    border: 2px solid var(--panel-border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    margin-right: 8px;
+    vertical-align: -2px;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  .erro-box{
+    background: var(--warn-soft);
+    border: 1px solid var(--warn);
+    border-radius: 4px;
+    padding: 16px 18px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--warn);
+    line-height: 1.6;
+  }
+
+  footer{
+    margin-top: 36px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+  <div class="masthead">
+    <div>
+      <p class="eyebrow">Fiducio · Auxiliar de Assembleias</p>
+      <h1>Nova assembleia</h1>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <a href="/" class="active">Importar</a>
+    <a href="/conciliacao">Conciliação</a>
+    <a href="/quorum">Quórum</a>
+  </nav>
+
+  <div class="panel">
+    <p class="panel-title">Arquivos selecionados no Fiducio</p>
+    <div class="lista-arquivos" id="lista-arquivos"></div>
+    <div id="sem-arquivos" style="font-family: var(--mono); font-size: 13px; color: var(--muted);">
+      Nenhum arquivo foi selecionado. Volte ao Fiducio, escolha os arquivos da ListagemB3 e clique em "Abrir Painel" novamente.
+    </div>
+    <button class="primary" id="btn-importar" disabled>Importar arquivos</button>
+    <div class="resultado-import" id="resultado-import"></div>
+  </div>
+
+  <div class="panel" id="painel-sessao" style="display:none;">
+    <p class="panel-title">Base importada</p>
+    <div class="summary-cards">
+      <div class="card"><div class="num" id="card-total">0</div><div class="lbl">Total de comitentes</div></div>
+      <div class="card"><div class="num" id="card-pj">0</div><div class="lbl">Pessoa jurídica</div></div>
+      <div class="card"><div class="num" id="card-pf">0</div><div class="lbl">Pessoa física</div></div>
+    </div>
+
+    <div class="gestor-box">
+      <p>Para os comitentes de pessoa jurídica (fundos), busque o gestor automaticamente na base pública da CVM. Pessoa física não precisa — você já tem o nome do investidor.</p>
+      <button class="secondary" id="btn-buscar-gestores">Buscar gestores na CVM</button>
+      <div id="resultado-gestores" style="margin-top: 14px;"></div>
+    </div>
+  </div>
+
+  <footer>Cada arquivo importado deve ter as abas SINTÉTICOS e APROVADOS, no formato padrão exportado pelo sistema interno da B3.</footer>
+
+<script src="/static/socket.io.min.js"></script>
+<script>
+const socket = io();
+let arquivosDisponiveis = [];
+
+const listaArquivos = document.getElementById('lista-arquivos');
+const semArquivos = document.getElementById('sem-arquivos');
+const btnImportar = document.getElementById('btn-importar');
+const resultadoImport = document.getElementById('resultado-import');
+
+async function carregarArquivos(){
+  const resp = await fetch('/api/arquivos_b3');
+  const data = await resp.json();
+  arquivosDisponiveis = data.caminhos || [];
+  renderLista();
+}
+
+function renderLista(){
+  if (arquivosDisponiveis.length === 0) {
+    listaArquivos.style.display = 'none';
+    semArquivos.style.display = 'block';
+    btnImportar.disabled = true;
+    return;
+  }
+  listaArquivos.style.display = 'block';
+  semArquivos.style.display = 'none';
+  listaArquivos.innerHTML = arquivosDisponiveis.map(caminho => {
+    const nome = caminho.split(/[\\/]/).pop();
+    return `<div class="arquivo-item"><span>${nome}</span></div>`;
+  }).join('');
+  btnImportar.disabled = false;
+}
+
+carregarArquivos();
+
+btnImportar.addEventListener('click', async () => {
+  btnImportar.disabled = true;
+  btnImportar.innerHTML = '<span class="spinner"></span>Importando...';
+
+  const caminhos = arquivosDisponiveis;
+
+  try {
+    const resp = await fetch('/api/importar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caminhos })
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      resultadoImport.innerHTML = `<div class="erro-box">${data.erro || 'Erro ao importar.'}</div>`;
+      return;
+    }
+
+    let html = `<span class="ok">✓ ${data.total_comitentes} comitente(s) importado(s)</span> — ${data.total_pj} jurídica(s), ${data.total_pf} física(s)`;
+    if (data.avisos && data.avisos.length) {
+      html += '<br>' + data.avisos.map(a => `<span class="aviso">⚠ ${a}</span>`).join('<br>');
+    }
+    resultadoImport.innerHTML = html;
+
+    document.getElementById('painel-sessao').style.display = 'block';
+    document.getElementById('card-total').textContent = data.total_comitentes;
+    document.getElementById('card-pj').textContent = data.total_pj;
+    document.getElementById('card-pf').textContent = data.total_pf;
+
+  } catch (e) {
+    resultadoImport.innerHTML = `<div class="erro-box">Erro de comunicação com o servidor: ${e}</div>`;
+  } finally {
+    btnImportar.disabled = false;
+    btnImportar.textContent = 'Importar arquivos selecionados';
+  }
+});
+
+document.getElementById('btn-buscar-gestores').addEventListener('click', async (e) => {
+  const btn = e.target;
+  const resultadoDiv = document.getElementById('resultado-gestores');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Buscando na CVM (pode levar até alguns minutos na primeira vez)...';
+
+  try {
+    const resp = await fetch('/api/buscar_gestores', { method: 'POST' });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      resultadoDiv.innerHTML = `<div class="erro-box">${data.erro}<br><br>${data.fallback || ''}</div>`;
+      return;
+    }
+
+    resultadoDiv.innerHTML = `<span style="color:var(--accent); font-family:var(--mono); font-size:13px;">✓ ${data.encontrados} gestor(es) encontrado(s) — ${data.nao_encontrados} não encontrado(s) (preencha manualmente na conciliação)</span>`;
+  } catch (e) {
+    resultadoDiv.innerHTML = `<div class="erro-box">Erro de comunicação: ${e}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Buscar gestores na CVM';
+  }
+});
+</script>
+</body>
+</html>

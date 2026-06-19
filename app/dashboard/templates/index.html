@@ -39,6 +39,28 @@
     *{ animation-duration: .001s !important; transition-duration: .001s !important; }
   }
 
+  /* ---------- nav tabs ---------- */
+  nav.tabs{
+    display:flex;
+    gap: 4px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--rule);
+  }
+  nav.tabs a{
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 10px 18px;
+    border-bottom: 2px solid transparent;
+  }
+  nav.tabs a.active{
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
   /* ---------- header ---------- */
   .masthead{
     display:flex;
@@ -307,6 +329,12 @@
     </div>
   </div>
 
+  <nav class="tabs" id="nav-tabs" style="display:none;">
+    <a href="/">Importar</a>
+    <a href="/conciliacao">Conciliação</a>
+    <a href="/quorum" class="active">Quórum</a>
+  </nav>
+
   <div class="grid">
 
     <div class="panel">
@@ -380,6 +408,11 @@
   </div>
 
   <footer>Painel de leitura — fonte de dados: aba QUÓRUM / COMITENTES do arquivo .xlsx selecionado · não recalcula fórmulas, apenas exibe o que o Excel já calculou</footer>
+
+  <div id="export-box" style="display:none; text-align:center; margin-top: 24px;">
+    <button class="primary" id="btn-exportar" style="background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 12px 28px; font-family: var(--sans); font-weight: 600; font-size: 13.5px; cursor: pointer;">Gerar Excel desta assembleia</button>
+    <div id="resultado-exportar" style="margin-top: 12px; font-family: var(--mono); font-size: 12.5px; color: var(--muted);"></div>
+  </div>
 
 <script src="/static/socket.io.min.js"></script>
 <script>
@@ -480,10 +513,83 @@ function atualizarStatusQuorum(){
   }
 }
 
+function renderSessao(data){
+  document.getElementById('nav-tabs').style.display = 'flex';
+  document.getElementById('export-box').style.display = 'block';
+
+  if (!data.carregada) {
+    document.getElementById('arquivo-nome').textContent = 'nenhuma sessão importada';
+    document.getElementById('hora-atualizacao').textContent = 'vá para a aba Importar';
+    return;
+  }
+
+  const q = data.quorum;
+  document.getElementById('arquivo-nome').textContent = (data.arquivos || []).join(', ');
+  document.getElementById('hora-atualizacao').textContent =
+    'última leitura ' + new Date().toLocaleTimeString('pt-BR');
+
+  setArc(q.quorum_pct_sobre_total);
+
+  const pctEl = document.querySelector('#quorum-pct');
+  const target = q.quorum_pct_sobre_total * 100;
+  let cur = parseFloat(pctEl.dataset.raw || '0');
+  const start = performance.now();
+  function step(t){
+    const p = Math.min(1, (t-start)/700);
+    const eased = 1 - Math.pow(1-p, 3);
+    const val = cur + (target - cur) * eased;
+    pctEl.innerHTML = val.toFixed(1) + '<span class="sign">%</span>';
+    if(p<1) requestAnimationFrame(step); else pctEl.dataset.raw = target;
+  }
+  requestAnimationFrame(step);
+
+  document.getElementById('st-total').innerHTML = fmtInt(q.total) + ' <small>títulos</small>';
+  document.getElementById('st-fora').innerHTML = fmtInt(q.fora_circulacao) + ' <small>títulos</small>';
+  document.getElementById('st-circ').innerHTML = fmtInt(q.em_circulacao) + ' <small>títulos</small>';
+  document.getElementById('st-quorum').innerHTML = fmtInt(q.quorum_qtd) + ' <small>' + fmtPct(q.quorum_pct_sobre_circulacao) + ' do em circulação</small>';
+
+  const c = data.contagem;
+  document.getElementById('card-investidores').textContent = c.total;
+  document.getElementById('card-ok').textContent = c.ok;
+  document.getElementById('card-pendentes').textContent = c.pendente;
+
+  window._ultimoPercentual = q.quorum_pct_sobre_total;
+  atualizarStatusQuorum();
+
+  // no modo sessão, a tabela detalhada de comitentes fica na aba Conciliação
+  document.getElementById('tbl-body').innerHTML = '';
+  document.getElementById('tbl-count').textContent = c.total + ' registro(s) — ver detalhes na Conciliação';
+  document.getElementById('empty-note').style.display = c.total ? 'none' : 'block';
+}
+
 document.getElementById('limiar-input').addEventListener('input', atualizarStatusQuorum);
 
-socket.on('update', render);
+socket.on('update_legado', render);
+socket.on('sessao_atualizada', renderSessao);
 socket.on('connect', () => socket.emit('request_update'));
+
+document.getElementById('btn-exportar').addEventListener('click', async (e) => {
+  const btn = e.target;
+  const resultadoDiv = document.getElementById('resultado-exportar');
+  btn.disabled = true;
+  const textoOriginal = btn.textContent;
+  btn.textContent = 'Gerando...';
+
+  try {
+    const resp = await fetch('/api/exportar', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) {
+      resultadoDiv.innerHTML = `<span style="color:var(--warn);">${data.erro || 'Erro ao exportar.'}</span>`;
+      return;
+    }
+    resultadoDiv.innerHTML = `<span style="color:var(--accent);">✓ Excel gerado em:</span><br>${data.caminho}`;
+  } catch (err) {
+    resultadoDiv.innerHTML = `<span style="color:var(--warn);">Erro de comunicação: ${err}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+});
 </script>
 </body>
 </html>
