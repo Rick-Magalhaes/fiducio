@@ -6,31 +6,43 @@ Sobe um Flask + Socket.IO local com três telas:
   - Conciliação: busca comitentes/gestores, marca OK/Fora
   - Quórum: visão ao vivo do quórum calculado a partir da sessão
 
-O servidor roda em processo separado (multiprocessing) para permitir
-start/stop confiável a partir da UI Tkinter — process.terminate() é
-garantido, diferente de tentar parar uma thread Werkzeug de fora.
+O servidor roda em uma thread (não em multiprocessing.Process). Em um
+.exe gerado pelo PyInstaller no Windows, um processo filho de
+multiprocessing pode reexecutar o programa inteiro do zero — incluindo
+abrir uma segunda janela completa do Tkinter — mesmo com
+freeze_support() chamado, quando o entry point importa módulos que
+disparam a inicialização da UI. Isso foi observado na prática: uma
+segunda janela do Fiducio abrindo em branco e o servidor nunca subindo
+na porta.
+
+O encerramento é feito via werkzeug.serving.make_server, que devolve
+um objeto servidor com .shutdown() — diferente de socketio.run()/
+app.run(), que não expõem um jeito de parar de fora (o mecanismo antigo
+environ['werkzeug.server.shutdown'] foi removido no Werkzeug 3.x).
 
 Modo legado: se aberto com um caminho de Excel existente (Template já
 preenchido), mantém o comportamento anterior de só exibir o quórum
 lendo aquele arquivo, sem a etapa de importação/conciliação.
 """
+import threading
 import time
 import webbrowser
-from multiprocessing import Process
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
+from werkzeug.serving import make_server
 
 from app.dashboard.excel_reader import ler_quorum, ler_investidores
 from app.dashboard.b3_importer import importar_arquivos
 from app.dashboard.store import SessaoAssembleia
 from app.dashboard.template_writer import gerar_template
 from app.dashboard.cvm_lookup import buscar_gestores, CVMIndisponivel
+from app.dashboard.paths import caminho_recurso
 
 PORTA = 5151
-_TEMPLATE_DIR = str(Path(__file__).parent / "templates")
-_STATIC_DIR = str(Path(__file__).parent / "static")
+_TEMPLATE_DIR = str(caminho_recurso("templates"))
+_STATIC_DIR = str(caminho_recurso("static"))
 
 
 def _montar_payload_legado(caminho_excel: Path) -> dict:
@@ -79,10 +91,10 @@ def _watcher_loop_legado(socketio: SocketIO, caminho_excel: Path):
         time.sleep(1)
 
 
-def _processo_servidor(caminho_excel_str: str | None, pasta_exportacao_str: str, caminhos_b3_str: list):
-    """Executa em um processo filho — monta a app Flask e roda até ser terminado."""
-    import threading
-
+def _montar_servidor(caminho_excel_str: str | None, pasta_exportacao_str: str, caminhos_b3_str: list):
+    """Monta a app Flask e devolve um objeto servidor (werkzeug BaseWSGIServer)
+    já pronto para rodar via .serve_forever() em uma thread, e que pode
+    ser encerrado de fora via .shutdown()."""
     sessao = SessaoAssembleia()
     pasta_exportacao = Path(pasta_exportacao_str)
     caminho_excel_legado = Path(caminho_excel_str) if caminho_excel_str else None
@@ -90,7 +102,14 @@ def _processo_servidor(caminho_excel_str: str | None, pasta_exportacao_str: str,
 
     app = Flask(__name__, template_folder=_TEMPLATE_DIR, static_folder=_STATIC_DIR)
     app.config["SECRET_KEY"] = "fiducio-painel-quorum"
-    socketio = SocketIO(app, cors_allowed_origins="*")
+    # async_mode forçado explicitamente: sem isso, a lib tenta
+    # autodetectar (eventlet -> gevent -> threading) verificando quais
+    # dependências estão instaladas. Dentro do .exe do PyInstaller isso
+    # pode detectar eventlet/gevent parcialmente empacotados (via
+    # collect_all de outras libs) e falhar com "Invalid async_mode
+    # specified" — forçar "threading" (o único modo realmente usado
+    # aqui) evita essa ambiguidade.
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
     modo_legado = caminho_excel_legado is not None
 
@@ -239,19 +258,21 @@ def _processo_servidor(caminho_excel_str: str | None, pasta_exportacao_str: str,
             target=_watcher_loop_legado, args=(socketio, caminho_excel_legado), daemon=True
         ).start()
 
-    socketio.run(app, host="127.0.0.1", port=PORTA, allow_unsafe_werkzeug=True)
+    servidor = make_server("127.0.0.1", PORTA, app, threaded=True)
+    return servidor
 
 
 class PainelQuorum:
     """Controla o ciclo de vida do servidor do painel: uma sessão por vez."""
 
     def __init__(self):
-        self._processo: Process | None = None
+        self._servidor = None
+        self._thread: threading.Thread | None = None
         self.caminho_excel: Path | None = None
 
     @property
     def rodando(self) -> bool:
-        return self._processo is not None and self._processo.is_alive()
+        return self._thread is not None and self._thread.is_alive()
 
     def abrir(
         self,
@@ -274,26 +295,32 @@ class PainelQuorum:
         pasta_exportacao = pasta_exportacao or (Path.home() / "Documents" / "Fiducio - Exportações")
         caminhos_b3_str = [str(c) for c in (caminhos_b3 or [])]
 
-        self._processo = Process(
-            target=_processo_servidor,
-            args=(str(caminho_excel) if caminho_excel else None, str(pasta_exportacao), caminhos_b3_str),
-            daemon=True,
-        )
-        self._processo.start()
-
-        time.sleep(1.5)  # dá tempo do servidor subir antes de abrir o navegador
-
-        if not self._processo.is_alive():
-            raise RuntimeError(
-                "O servidor do painel não conseguiu iniciar — verifique se a "
-                f"porta {PORTA} já está em uso por outro programa (ou outra "
-                "instância do Fiducio aberta)."
+        try:
+            self._servidor = _montar_servidor(
+                str(caminho_excel) if caminho_excel else None,
+                str(pasta_exportacao),
+                caminhos_b3_str,
             )
+        except OSError as e:
+            self._servidor = None
+            raise RuntimeError(
+                f"Não foi possível iniciar o servidor na porta {PORTA} — "
+                f"verifique se já não há outra instância do Fiducio aberta. ({e})"
+            ) from e
 
+        self._thread = threading.Thread(target=self._servidor.serve_forever, daemon=True)
+        self._thread.start()
+
+        time.sleep(1)  # dá tempo do servidor aceitar conexões antes de abrir o navegador
         webbrowser.open(f"http://127.0.0.1:{PORTA}")
 
     def encerrar(self):
-        if self._processo is not None and self._processo.is_alive():
-            self._processo.terminate()
-            self._processo.join(timeout=3)
-        self._processo = None
+        if self._servidor is not None:
+            try:
+                self._servidor.shutdown()
+            except Exception:
+                pass
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=3)
+        self._servidor = None
+        self._thread = None

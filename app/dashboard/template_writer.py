@@ -1,153 +1,147 @@
 """
-Gera um Template_Posição_Investidores.xlsx novo (do zero) a partir dos
-dados da sessão de assembleia em memória.
+Gera um Template_Posição_Investidores.xlsx novo a partir da sessão de
+assembleia, usando o arquivo modelo real do usuário como base — não um
+workbook em branco. Isso preserva 100% da formatação original (cores,
+fontes, larguras de coluna, bordas, formato de número) porque o
+sistema nunca recria essas células do zero: ele copia o estilo da
+linha-modelo (linha 2 de cada aba, que já vem com a formatação certa
+e as fórmulas corretas) para cada nova linha de dado.
 
-Cada exportação cria um arquivo novo — nunca sobrescreve ou tenta
-mesclar com um Template existente (decisão confirmada: cada assembleia
-tem população e quantidades diferentes, então um arquivo novo por
-exportação é mais seguro que tentar atualizar um antigo).
+A aba QUÓRUM não precisa de nenhuma escrita — as fórmulas dos três
+blocos (Quantidade Circulação / Quantidade Presentes / Saldo Devedor)
+já existem no modelo e continuam funcionando sem alteração.
 
-As fórmulas de % são escritas exatamente como no Template original
-(mesma sintaxe, mesmas referências de célula) — o cálculo de
-porcentagem continua sendo feito pelo Excel ao abrir o arquivo, não
-pelo Python. Isso preserva o comportamento que o usuário já confia.
+Cada exportação parte sempre do modelo limpo (nunca de uma exportação
+anterior), gerando um arquivo novo — decisão confirmada: cada
+assembleia tem população e quantidades diferentes.
 """
+import re
+from copy import copy
 from datetime import datetime
 from pathlib import Path
 
-from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 
 from app.dashboard.b3_importer import BaseImportada
+from app.dashboard.paths import caminho_recurso
+
+MODELO_PATH = caminho_recurso("assets", "Template_Posição_Investidores_modelo.xlsx")
+
+LINHA_MODELO = 2  # linha do template que tem a formatação/fórmulas de referência
+
+_REF_CELULA_RE = re.compile(r"(\$?[A-Z]{1,2})(\d+)\b")
 
 
-def _cabecalho_participantes(ws):
-    cabecalhos = ["Gestor", "Razão Social", "CNPJ", "Conta", "Tipo conta",
-                  "Quantidade", "%", "Presença \n(OK ou Fora)", "Representante",
-                  "Voto 1", "Voto 2", "Voto 3"]
-    for col, texto in enumerate(cabecalhos, start=1):
-        c = ws.cell(row=1, column=col, value=texto)
-        c.font = Font(bold=True)
+def _copiar_estilo_linha(ws: Worksheet, linha_origem: int, linha_destino: int, max_col: int):
+    """Copia fonte, preenchimento, borda, alinhamento e formato de número
+    de cada célula da linha_origem para a linha_destino."""
+    for col in range(1, max_col + 1):
+        origem = ws.cell(row=linha_origem, column=col)
+        destino = ws.cell(row=linha_destino, column=col)
+        destino.font = copy(origem.font)
+        destino.fill = copy(origem.fill)
+        destino.border = copy(origem.border)
+        destino.alignment = copy(origem.alignment)
+        destino.number_format = origem.number_format
 
 
-def _cabecalho_comitentes(ws):
-    cabecalhos = ["Agente Custodia", "Documento Participante", "Gestão",
-                  "Nome comitente", "CPF/CNPJ Comitente", "Tipo Pessoa",
-                  "Quantidade", "%", "Presença\n (OK ou FORA)", "Documentos",
-                  "Representante", "Item1", "Item 2", "Item 3", "Item 4",
-                  "Item 5", "Séries", "PU ", "Posição $", "Posição %"]
-    for col, texto in enumerate(cabecalhos, start=1):
-        c = ws.cell(row=1, column=col, value=texto)
-        c.font = Font(bold=True)
+def _copiar_formula_ajustada(formula: str, linha_origem: int, linha_destino: int) -> str:
+    """Ajusta referências relativas de linha dentro de uma fórmula ao
+    copiá-la para outra linha (ex: D2 -> D3 quando a fórmula referencia
+    a própria linha). Não toca referências de coluna inteira ($G:$G)
+    nem fórmulas que referenciam outra aba com linha fixa (QUÓRUM!$H$4)."""
+
+    def substituir(m):
+        col, lin = m.group(1), m.group(2)
+        if lin == str(linha_origem):
+            return f"{col}{linha_destino}"
+        return m.group(0)
+
+    return _REF_CELULA_RE.sub(substituir, formula)
 
 
-def _escrever_participantes(ws, base: BaseImportada):
-    _cabecalho_participantes(ws)
-    for i, p in enumerate(base.participantes, start=2):
-        ws.cell(row=i, column=2, value=p.razao_social)              # B Razão Social
-        ws.cell(row=i, column=3, value=int(p.cnpj) if p.cnpj.isdigit() else p.cnpj)  # C CNPJ
-        ws.cell(row=i, column=4, value=p.conta)                      # D Conta
-        ws.cell(row=i, column=5, value=p.tipo_conta)                 # E Tipo conta
-        ws.cell(row=i, column=6, value=p.quantidade)                 # F Quantidade
-        ws.cell(row=i, column=7, value=(
-            f'=IF(OR(MID(D{i},7,2)="10",MID(D{i},7,2)="20",MID(D{i},7,2)="68"),'
-            f'SUMIF(COMITENTES!$C:$C,B{i},COMITENTES!$G:$G),'
-            f'IF(H{i}="fora",0%,F{i}/QUÓRUM!$H$4))'
-        ))  # G %
-        ws.cell(row=i, column=8, value=(
-            f'=IF(OR(MID(D{i},7,2)="10",MID(D{i},7,2)="20",MID(D{i},7,2)="68"),'
-            f'"PREENCHER NA PRÓXIMA ABA","")'
-        ))  # H Presença
+def _mapear_modelo(ws: Worksheet, max_col: int) -> tuple[dict, dict]:
+    """Retorna (formulas, valores_padrao) da linha-modelo: fórmulas são
+    strings que começam com '=' (precisam de ajuste de referência ao
+    copiar); valores_padrao são constantes (ex: a coluna 'Séries' com
+    valor fixo 'única') que devem ser replicados em toda linha nova."""
+    formulas, valores_padrao = {}, {}
+    for col in range(1, max_col + 1):
+        valor = ws.cell(row=LINHA_MODELO, column=col).value
+        if valor is None:
+            continue
+        if isinstance(valor, str) and valor.startswith("="):
+            formulas[col] = valor
+        else:
+            valores_padrao[col] = valor
+    return formulas, valores_padrao
 
 
-def _escrever_comitentes(ws, base: BaseImportada):
-    _cabecalho_comitentes(ws)
-    for i, c in enumerate(base.comitentes, start=2):
-        ws.cell(row=i, column=3, value=c.gestor or "")                # C Gestão
-        ws.cell(row=i, column=4, value=c.nome)                        # D Nome comitente
+def _preencher_participantes(ws: Worksheet, base: BaseImportada):
+    max_col = ws.max_column
+    formulas_modelo, valores_padrao = _mapear_modelo(ws, max_col)
+    # colunas que o importador sempre preenche explicitamente — não
+    # devem ser sobrescritas pelos valores padrão do modelo
+    colunas_dados = {2, 3, 4, 5, 6}
+
+    for i, p in enumerate(base.participantes, start=LINHA_MODELO):
+        if i > LINHA_MODELO:
+            _copiar_estilo_linha(ws, LINHA_MODELO, i, max_col)
+            for col, valor in valores_padrao.items():
+                if col not in colunas_dados:
+                    ws.cell(row=i, column=col, value=valor)
+
+        ws.cell(row=i, column=2, value=p.razao_social)
+        ws.cell(row=i, column=3, value=int(p.cnpj) if p.cnpj.isdigit() else p.cnpj)
+        ws.cell(row=i, column=4, value=p.conta)
+        ws.cell(row=i, column=5, value=p.tipo_conta)
+        ws.cell(row=i, column=6, value=p.quantidade)
+
+        for col, formula in formulas_modelo.items():
+            ws.cell(row=i, column=col, value=_copiar_formula_ajustada(formula, LINHA_MODELO, i))
+
+
+def _preencher_comitentes(ws: Worksheet, base: BaseImportada):
+    max_col = ws.max_column
+    formulas_modelo, valores_padrao = _mapear_modelo(ws, max_col)
+    colunas_dados = {3, 4, 5, 6, 7, 9, 17}
+
+    for i, c in enumerate(base.comitentes, start=LINHA_MODELO):
+        if i > LINHA_MODELO:
+            _copiar_estilo_linha(ws, LINHA_MODELO, i, max_col)
+            for col, valor in valores_padrao.items():
+                if col not in colunas_dados:
+                    ws.cell(row=i, column=col, value=valor)
+
+        ws.cell(row=i, column=3, value=c.gestor or "")
+        ws.cell(row=i, column=4, value=c.nome)
         doc = c.documento
-        ws.cell(row=i, column=5, value=int(doc) if doc.isdigit() else doc)  # E CPF/CNPJ
-        ws.cell(row=i, column=6, value=c.tipo_pessoa)                  # F Tipo Pessoa
-        ws.cell(row=i, column=7, value=c.quantidade)                   # G Quantidade
-        ws.cell(row=i, column=8, value=f'=IF(I{i}="fora",0%,G{i}/QUÓRUM!$C$6)')  # H %
+        ws.cell(row=i, column=5, value=int(doc) if doc.isdigit() else doc)
+        ws.cell(row=i, column=6, value=c.tipo_pessoa)
+        ws.cell(row=i, column=7, value=c.quantidade)
         if c.status:
-            ws.cell(row=i, column=9, value=c.status.upper())           # I Presença
-        ws.cell(row=i, column=17, value=c.serie)                       # Q Séries
+            ws.cell(row=i, column=9, value=c.status.upper())
+        ws.cell(row=i, column=17, value=c.serie)
 
-
-def _escrever_quorum(ws):
-    """
-    Replica os três blocos paralelos da aba QUÓRUM do Template original:
-    - B-E  (Quantidade Circulação): baseado só em COMITENTES
-    - G-J  (Quantidade Presentes): combina PARTICIPANTES + COMITENTES —
-      é este bloco que as fórmulas de PARTICIPANTES!G referenciam
-      (QUÓRUM!$H$4), por isso precisa existir mesmo que a tela do
-      sistema só mostre o quórum do bloco B-E.
-    - L-O  (Saldo Devedor): baseado na posição em R$ (coluna S de
-      COMITENTES) — fica com #DIV/0! se a posição em $ não for
-      preenchida, igual ao comportamento original.
-    """
-    ws.cell(row=1, column=2, value="Quantidade Circulação")
-    ws.cell(row=1, column=7, value="Quantidade Presentes")
-    ws.cell(row=1, column=12, value="Saldo Devedor")
-
-    # bloco B-E
-    ws.cell(row=4, column=2, value="TOTAL")
-    ws.cell(row=4, column=3, value="=SUM(COMITENTES!$G:$G)")
-    ws.cell(row=5, column=2, value="FORA DE CIRCULAÇÃO")
-    ws.cell(row=5, column=3, value='=SUMIF(COMITENTES!$I:$I,"FORA",COMITENTES!$G:$G)')
-    ws.cell(row=5, column=4, value="=C5/C4")
-    ws.cell(row=6, column=2, value="EM CIRCULAÇÃO")
-    ws.cell(row=6, column=3, value="=C4-C5")
-    ws.cell(row=7, column=2, value="QUÓRUM")
-    ws.cell(row=7, column=3, value='=SUMIF(COMITENTES!$I:$I,"OK",COMITENTES!$G:$G)')
-    ws.cell(row=7, column=4, value="=C7/C6")
-
-    # bloco G-J — combina PARTICIPANTES + COMITENTES (referenciado por
-    # PARTICIPANTES!G via QUÓRUM!$H$4)
-    ws.cell(row=4, column=7, value="TOTAL")
-    ws.cell(row=4, column=8, value="=SUM(COMITENTES!$G:$G)")
-    ws.cell(row=5, column=7, value="FORA DE CIRCULAÇÃO")
-    ws.cell(row=5, column=8, value=(
-        '=SUMIF(PARTICIPANTES!$H:$H,"FORA",PARTICIPANTES!$F:$F)'
-        '+SUMIF(COMITENTES!$I:$I,"FORA",COMITENTES!$G:$G)'
-    ))
-    ws.cell(row=5, column=9, value="=H5/H4")
-    ws.cell(row=6, column=7, value="EM CIRCULAÇÃO")
-    ws.cell(row=6, column=8, value="=H4-H5")
-    ws.cell(row=7, column=7, value="QUÓRUM")
-    ws.cell(row=7, column=8, value='=SUMIF(COMITENTES!$I:$I,"OK",COMITENTES!$G:$G)')
-
-    # bloco L-O — posição em R$ (fica #DIV/0! se a coluna S não for
-    # preenchida, igual ao Template original)
-    ws.cell(row=4, column=12, value="TOTAL")
-    ws.cell(row=4, column=13, value="=SUM(COMITENTES!S:S)")
-    ws.cell(row=5, column=12, value="FORA DE CIRCULAÇÃO")
-    ws.cell(row=5, column=13, value='=SUMIF(COMITENTES!$I:$I,"FORA",COMITENTES!$S:$S)')
-    ws.cell(row=5, column=14, value="=M5/M4")
-    ws.cell(row=6, column=12, value="EM CIRCULAÇÃO")
-    ws.cell(row=6, column=13, value="=M4-M5")
-    ws.cell(row=7, column=12, value="QUÓRUM")
-    ws.cell(row=7, column=13, value='=SUMIF(COMITENTES!$I:$I,"OK",COMITENTES!$S:$S)')
-    ws.cell(row=7, column=14, value="=M7/M4")
-
-    for cel in ("B4", "B5", "B6", "B7", "G4", "G5", "G6", "G7", "L4", "L5", "L6", "L7"):
-        ws[cel].font = Font(bold=True)
+        for col, formula in formulas_modelo.items():
+            ws.cell(row=i, column=col, value=_copiar_formula_ajustada(formula, LINHA_MODELO, i))
 
 
 def gerar_template(base: BaseImportada, pasta_destino: Path) -> Path:
-    """Gera um novo Template_Posição_Investidores.xlsx e retorna o caminho."""
-    wb = Workbook()
+    """Gera um novo Template_Posição_Investidores.xlsx a partir do
+    modelo real do usuário, preenchendo PARTICIPANTES e COMITENTES.
+    A aba QUÓRUM não é tocada — suas fórmulas já existem no modelo."""
+    if not MODELO_PATH.exists():
+        raise FileNotFoundError(
+            f"Arquivo modelo não encontrado em {MODELO_PATH}. "
+            "Verifique se app/dashboard/assets/Template_Posição_Investidores_modelo.xlsx existe."
+        )
 
-    ws_part = wb.active
-    ws_part.title = "PARTICIPANTES"
-    _escrever_participantes(ws_part, base)
+    wb = load_workbook(MODELO_PATH, data_only=False)
 
-    ws_com = wb.create_sheet("COMITENTES")
-    _escrever_comitentes(ws_com, base)
-
-    ws_quorum = wb.create_sheet("QUÓRUM")
-    _escrever_quorum(ws_quorum)
+    _preencher_participantes(wb["PARTICIPANTES"], base)
+    _preencher_comitentes(wb["COMITENTES"], base)
 
     pasta_destino = Path(pasta_destino)
     pasta_destino.mkdir(parents=True, exist_ok=True)

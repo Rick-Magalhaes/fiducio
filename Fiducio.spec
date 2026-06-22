@@ -35,7 +35,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Fiducio',
+    name='Fiducio Teste',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
