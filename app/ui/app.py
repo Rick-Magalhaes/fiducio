@@ -4,7 +4,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from app.core.processor import ProcessadorProcuracoes
+from app.core.processor import ProcessadorProcuracoes, AUTOMATICO
 from app.models.registry import MODELOS
 from app.services.excel_services import carregar_arquivos, preencher_excel
 from app.dashboard.server import PainelQuorum
@@ -127,7 +127,7 @@ class FiducioApp(ctk.CTk):
         self._label(outer, "MODELO DE PROCURAÇÃO")
         self.dropdown_modelo = ctk.CTkOptionMenu(
             outer,
-            values=list(MODELOS.keys()),
+            values=list(MODELOS.keys()) + [AUTOMATICO],
             fg_color=SURFACE,
             button_color=SURFACE,
             button_hover_color="#252837",
@@ -140,6 +140,17 @@ class FiducioApp(ctk.CTk):
             command=self._on_modelo_change,
         )
         self.dropdown_modelo.pack(anchor="w", pady=(4, 0))
+
+        self.var_simular = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            outer,
+            text="Simular — mostra o resultado sem renomear nada",
+            variable=self.var_simular,
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+            checkbox_width=18,
+            checkbox_height=18,
+        ).pack(anchor="w", pady=(10, 0))
 
         self._divider(outer)
 
@@ -462,37 +473,65 @@ class FiducioApp(ctk.CTk):
             return
 
         total = len(arquivos)
+        simular = self.var_simular.get()
+        automatico = self.modelo_selecionado == AUTOMATICO
+
         self._log_add(f"Modelo: {self.modelo_selecionado}")
+        if simular:
+            self._log_add("MODO SIMULAÇÃO — nenhum arquivo será renomeado.")
         self._log_add(f"Processando {total} arquivo(s)...")
 
         contador = [0]
         sucessos = [0]
         falhas   = [0]
+        pendentes = [0]
 
         def on_resultado(r):
             contador[0] += 1
-            if r.sucesso:
-                sucessos[0] += 1
+            prefixo = f"[{contador[0]}/{total}]"
+            if r.indecidido:
+                pendentes[0] += 1
                 self._log_add(
-                    f"[{contador[0]}/{total}] ✓  {r.caminho_original.name}  →  {r.novo_nome}"
+                    f"{prefixo} ?  {r.caminho_original.name}  →  NÃO DECIDIDO ({r.motivo})"
+                )
+            elif r.sucesso:
+                sucessos[0] += 1
+                origem = f"  [{r.modelo_usado} {r.nota}]" if r.modelo_usado else ""
+                seta = "seria" if simular else "→"
+                self._log_add(
+                    f"{prefixo} ✓  {r.caminho_original.name}  {seta}  {r.novo_nome}{origem}"
                 )
             else:
                 falhas[0] += 1
                 self._log_add(
-                    f"[{contador[0]}/{total}] ✗  {r.caminho_original.name}  →  {r.erro}"
+                    f"{prefixo} ✗  {r.caminho_original.name}  →  {r.erro}"
                 )
 
-        modelo = MODELOS[self.modelo_selecionado]
-        processador = ProcessadorProcuracoes(modelo)
+        modelo = None if automatico else MODELOS[self.modelo_selecionado]
+        processador = ProcessadorProcuracoes(modelo, simular=simular)
         batch = processador.processar_pasta(pasta, callback=on_resultado)
 
-        self.resumo_label.configure(
-            text=f"Finalizado — {sucessos[0]} renomeado(s)  |  {falhas[0]} erro(s)"
-        )
+        verbo = "simulado(s)" if simular else "renomeado(s)"
+        resumo = f"Finalizado — {sucessos[0]} {verbo}  |  {falhas[0]} erro(s)"
+        if pendentes[0]:
+            resumo += f"  |  {pendentes[0]} sem decisão"
+        self.resumo_label.configure(text=resumo)
 
-        if batch.falhas:
+        if batch.pendentes:
+            self._log_add("")
+            self._log_add(
+                f"⚠  {len(batch.pendentes)} arquivo(s) sem decisão — mantiveram o nome original:"
+            )
+            for r in batch.pendentes:
+                self._log_add(f"   • {r.caminho_original.name}  ({r.motivo})")
+            self._log_add(
+                "   Processe esses novamente escolhendo o modelo na mão."
+            )
+
+        if batch.falhas or batch.pendentes:
             log_path = batch.salvar_log_erros(pasta)
-            self._log_add(f"Log de erros salvo em: {log_path}")
+            self._log_add(f"Log salvo em: {log_path}")
+
 
     def _processar_excel(self):
         if not self.pasta_excel_path:

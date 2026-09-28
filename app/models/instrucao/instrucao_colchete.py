@@ -1,7 +1,7 @@
 import re
 import unicodedata
 from app.models.base_model import ProcuracaoBase
-from app.utils.text_utils import texto_completo
+from app.utils.text_utils import texto_completo, normalizar_marcadores
 
 
 def norm(texto: str) -> str:
@@ -95,6 +95,7 @@ def extrair_votos_colchete(linhas: list[str]) -> list[str]:
         bloco_aberto, voto_bloco, marcadas_bloco = False, None, 0
 
     for linha in linhas:
+        linha = normalizar_marcadores(linha)
         opcoes = OPCAO_RE.findall(linha)
         if not opcoes:
             if linha.strip():

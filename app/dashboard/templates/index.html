@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Painel de Quórum — Fiducio</title>
+<title>Painel de Quórum — Fiduxo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -220,6 +220,8 @@
     display:flex;
     align-items:center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
     background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: 4px;
@@ -237,6 +239,49 @@
     font-size: 11.5px;
     color: var(--muted);
   }
+  .quorum-controls{
+    display:flex;
+    align-items:center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .convocacao-toggle{
+    display:flex;
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    overflow:hidden;
+  }
+  .conv-btn{
+    background: var(--bg);
+    color: var(--muted);
+    border: none;
+    padding: 6px 12px;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .conv-btn + .conv-btn{
+    border-left: 1px solid var(--panel-border);
+  }
+  .conv-btn.active{
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .qualquer-quorum-check{
+    display:flex;
+    align-items:center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .qualquer-quorum-check input{
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
   .limiar-control{
     display:flex;
     align-items:center;
@@ -244,6 +289,10 @@
     font-family: var(--mono);
     font-size: 11.5px;
     color: var(--muted);
+    transition: opacity .15s;
+  }
+  .limiar-control.disabled{
+    opacity: .35;
   }
   .limiar-control label{
     letter-spacing: .04em;
@@ -379,9 +428,19 @@
 
       <div class="status-bar">
         <span class="msg" id="status-msg">—</span>
-        <span class="limiar-control">
-          <label for="limiar-input">quórum exigido</label>
-          <input type="number" id="limiar-input" min="0" max="100" step="0.1" value="50">%
+        <span class="quorum-controls">
+          <span class="convocacao-toggle">
+            <button type="button" class="conv-btn active" id="btn-conv-1" onclick="selecionarConvocacao(1)">1ª convocação</button>
+            <button type="button" class="conv-btn" id="btn-conv-2" onclick="selecionarConvocacao(2)">2ª convocação</button>
+          </span>
+          <label class="qualquer-quorum-check">
+            <input type="checkbox" id="qualquer-quorum-input">
+            qualquer quórum
+          </label>
+          <span class="limiar-control" id="limiar-control-wrap">
+            <label for="limiar-input">quórum de instalação exigido</label>
+            <input type="number" id="limiar-input" min="0" max="100" step="0.1" value="50">%
+          </span>
         </span>
       </div>
 
@@ -498,17 +557,44 @@ function render(data){
   });
 }
 
+window._convocacaoAtual = 1;
+
+function selecionarConvocacao(numero){
+  window._convocacaoAtual = numero;
+  document.getElementById('btn-conv-1').classList.toggle('active', numero === 1);
+  document.getElementById('btn-conv-2').classList.toggle('active', numero === 2);
+  atualizarStatusQuorum();
+}
+
+document.getElementById('qualquer-quorum-input').addEventListener('change', (e) => {
+  const limiarWrap = document.getElementById('limiar-control-wrap');
+  const limiarInput = document.getElementById('limiar-input');
+  const desabilitado = e.target.checked;
+  limiarInput.disabled = desabilitado;
+  limiarWrap.classList.toggle('disabled', desabilitado);
+  atualizarStatusQuorum();
+});
+
 function atualizarStatusQuorum(){
   const statusMsg = document.getElementById('status-msg');
   const limiarInput = document.getElementById('limiar-input');
-  const limiar = (parseFloat(limiarInput.value) || 0) / 100;
+  const qualquerQuorum = document.getElementById('qualquer-quorum-input').checked;
+  const rotuloConv = window._convocacaoAtual === 1 ? '1ª convocação' : '2ª convocação';
   const atual = window._ultimoPercentual ?? 0;
 
+  if (qualquerQuorum) {
+    statusMsg.textContent = `Quórum de instalação atingido (${rotuloConv} — qualquer quórum)`;
+    statusMsg.className = 'msg atingido';
+    return;
+  }
+
+  const limiar = (parseFloat(limiarInput.value) || 0) / 100;
+
   if (atual >= limiar) {
-    statusMsg.textContent = `Quórum de ${limiarInput.value}% atingido`;
+    statusMsg.textContent = `Quórum de instalação de ${limiarInput.value}% atingido (${rotuloConv})`;
     statusMsg.className = 'msg atingido';
   } else {
-    statusMsg.textContent = `Quórum de ${limiarInput.value}% ainda não atingido`;
+    statusMsg.textContent = `Quórum de instalação de ${limiarInput.value}% ainda não atingido (${rotuloConv})`;
     statusMsg.className = 'msg nao-atingido';
   }
 }
