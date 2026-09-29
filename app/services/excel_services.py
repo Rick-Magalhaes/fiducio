@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 ABA_COMITENTES = "COMITENTES"
 COL_CPF        = "E"
+COL_TIPO       = "F"   # Tipo Pessoa: Física / Jurídica
 COL_STATUS     = "I"
 COL_VOTOS_INI  = 12   # coluna L
 
@@ -44,7 +45,7 @@ MAPA_VOTOS = {
 
 @dataclass
 class DadosArquivo:
-    cpf: str          # 11 dígitos, sem formatação
+    cpf: str          # 11 dígitos (CPF) ou 14 (CNPJ), sem formatação
     votos: list[str]
     arquivo: Path
 
@@ -53,41 +54,74 @@ class ExcelResult:
     preenchidos: int
     pulados: int      # já tinham status "ok"
     nao_encontrados: list[DadosArquivo]
+    ignorados: list[Path] | None = None   # nome fora do padrão — nem foram lidos
 
 # =============================================================================
 # PARSING DO NOME DO ARQUIVO
 # =============================================================================
 
-def _normalizar_cpf(valor: str) -> str:
-    return re.sub(r"\D", "", str(valor)).zfill(11)
+def _normalizar_doc(valor, tipo_pessoa=None) -> str:
+    """
+    Devolve só os dígitos, com o tamanho certo: 11 para CPF, 14 para CNPJ.
+
+    O Excel guarda o documento como número e come os zeros à esquerda
+    (o CNPJ 02.332.886/0001-04 chega como 2332886000104). Quando a linha diz
+    "Jurídica", o alvo é 14; "Física", 11. Sem essa informação, o tamanho
+    decide — e aí um CNPJ com muitos zeros à esquerda ficaria ambíguo.
+    """
+    d = re.sub(r"\D", "", str(valor))
+    if not d:
+        return ""
+    t = str(tipo_pessoa or "").strip().lower()
+    if t.startswith("jur"):
+        return d.zfill(14)
+    if t.startswith("f"):          # "Física"
+        return d.zfill(11)
+    return d.zfill(11) if len(d) <= 11 else d.zfill(14)
+
+# compatibilidade com quem ainda importa o nome antigo
+_normalizar_cpf = _normalizar_doc
+
+# CPF (11) ou CNPJ (14), com ou sem pontuação, seguido de " - " e os votos
+NOME_RE = re.compile(
+    r"^("
+    r"\d{3}[.\-\s]?\d{3}[.\-\s]?\d{3}[.\-\s]?\d{2}"          # CPF
+    r"|\d{2}[.\-\s]?\d{3}[.\-\s]?\d{3}[/\-\s]?\d{4}[.\-\s]?\d{2}"  # CNPJ
+    r")\s*-\s*(.+)$"
+)
 
 def _parsear_nome(caminho: Path) -> DadosArquivo | None:
     stem = caminho.stem.strip().replace('"', "")
-    match = re.match(
-        r"^(\d{3}[\.\-\s]?\d{3}[\.\-\s]?\d{3}[\.\-\s]?\d{2})\s*-\s*(.+)$",
-        stem,
-    )
+    match = NOME_RE.match(stem)
     if not match:
         log.warning("Nome fora do padrão: %s", caminho.name)
         return None
 
-    cpf   = _normalizar_cpf(match.group(1))
+    digitos = re.sub(r"\D", "", match.group(1))
+    if len(digitos) not in (11, 14):
+        log.warning("Documento com %d dígitos: %s", len(digitos), caminho.name)
+        return None
+
     votos = [v.strip() for v in match.group(2).split(",") if v.strip()]
-    return DadosArquivo(cpf=cpf, votos=votos, arquivo=caminho)
+    return DadosArquivo(cpf=digitos, votos=votos, arquivo=caminho)
 
 def carregar_arquivos(pasta: Path) -> dict[str, DadosArquivo]:
     """
-    Lê os nomes dos PDFs já renomeados e monta um dicionário CPF → DadosArquivo.
+    Lê os nomes dos PDFs já renomeados e monta um dicionário documento → dados.
     Não abre nenhum PDF — só lê o nome do arquivo.
     """
     mapa: dict[str, DadosArquivo] = {}
-    for pdf in pasta.rglob("*.pdf"):
+    for pdf in sorted(pasta.rglob("*.pdf")):
         dados = _parsear_nome(pdf)
         if dados:
             if dados.cpf in mapa:
-                log.warning("CPF duplicado nos arquivos: %s", dados.cpf)
+                log.warning("Documento duplicado nos arquivos: %s", dados.cpf)
             mapa[dados.cpf] = dados
     return mapa
+
+def listar_ignorados(pasta: Path) -> list[Path]:
+    """PDFs cujo nome o preenchedor não consegue ler — ficam de fora em silêncio."""
+    return [p for p in sorted(pasta.rglob("*.pdf")) if _parsear_nome(p) is None]
 
 # =============================================================================
 # TRADUÇÃO DE VOTOS
@@ -136,7 +170,9 @@ def preencher_excel(excel_path: Path, mapa: dict[str, DadosArquivo]) -> ExcelRes
         if cpf_raw is None:
             break
 
-        cpf_norm = _normalizar_cpf(str(cpf_raw))
+        cpf_norm = _normalizar_doc(
+            cpf_raw, ws[f"{COL_TIPO}{linha}"].value
+        )
 
         # já processado anteriormente
         if ws[f"{COL_STATUS}{linha}"].value == "ok":

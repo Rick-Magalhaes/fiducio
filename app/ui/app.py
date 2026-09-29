@@ -6,7 +6,11 @@ import customtkinter as ctk
 
 from app.core.processor import ProcessadorProcuracoes, AUTOMATICO
 from app.models.registry import MODELOS
-from app.services.excel_services import carregar_arquivos, preencher_excel
+from app.services.excel_services import (
+    carregar_arquivos,
+    listar_ignorados,
+    preencher_excel,
+)
 from app.dashboard.server import PainelQuorum
 
 ctk.set_appearance_mode("dark")
@@ -544,8 +548,19 @@ class FiducioApp(ctk.CTk):
         self._log_clear()
         self._log_add("Carregando arquivos...")
 
+        total_pdfs = len(list(self.pasta_excel_path.rglob("*.pdf")))
         mapa = carregar_arquivos(self.pasta_excel_path)
-        self._log_add(f"{len(mapa)} CPF(s) encontrado(s) nos arquivos.")
+        ignorados = listar_ignorados(self.pasta_excel_path)
+
+        self._log_add(
+            f"{total_pdfs} PDF(s) na pasta  →  {len(mapa)} documento(s) lido(s)."
+        )
+        if ignorados:
+            self._log_add(
+                f"⚠  {len(ignorados)} arquivo(s) com nome fora do padrão — NÃO entram na planilha:"
+            )
+            for p in ignorados:
+                self._log_add(f"   • {p.name}")
         self._log_add("Preenchendo planilha...")
 
         resultado = preencher_excel(self.excel_path, mapa)
@@ -562,13 +577,14 @@ class FiducioApp(ctk.CTk):
         else:
             self._log_add("✓  Todos os CPFs foram encontrados na planilha.")
 
-        self.resumo_label.configure(
-            text=(
-                f"Finalizado — {resultado.preenchidos} preenchido(s)  |  "
-                f"{resultado.pulados} já existiam  |  "
-                f"{len(resultado.nao_encontrados)} não encontrado(s)"
-            )
+        resumo = (
+            f"Finalizado — {resultado.preenchidos} preenchido(s)  |  "
+            f"{resultado.pulados} já existiam  |  "
+            f"{len(resultado.nao_encontrados)} não encontrado(s)"
         )
+        if ignorados:
+            resumo += f"  |  {len(ignorados)} ignorado(s)"
+        self.resumo_label.configure(text=resumo)
 
     # ── painel de quórum ──────────────────────────────────────────────────────
 
